@@ -1,0 +1,6 @@
+First Name,Last Name,Phone,Property Address,City,State,Zip,Property Type,Beds,Baths,Sqft,Year Built,Estimated Value,Equity %,Owner Occupied,Last Sale Date,Last Sale Price,Absentee Owner,Free And Clear
+John,Smith,+15551234567,123 Oak St,Riverside,CA,92501,Single Family,3,2,1500,1995,450000,65,Yes,2015-03-15,280000,No,No
+Jane,Doe,+15559876543,456 Pine Ave,Anaheim,CA,92801,Single Family,4,3,2200,2001,620000,80,No,2018-07-22,410000,Yes,Yes
+Bob,Johnson,+15551112222,789 Elm Dr,Corona,CA,92879,Single Family,3,2,1800,2008,520000,45,Yes,2020-01-10,380000,No,No
+Maria,Garcia,+15553334444,321 Maple Ln,Irvine,CA,92618,Single Family,5,3,2800,1988,850000,90,Yes,2005-06-18,420000,No,Yes
+Tom,Williams,+15555556666,654 Cedar Blvd,Ontario,CA,91764,Single Family,3,1,1200,2015,380000,25,Yes,2021-11-30,340000,No,No
