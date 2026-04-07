@@ -34,7 +34,6 @@ const COLUMN_MAP: Record<string, keyof Lead> = {
   // zip
   zip: "zip",
   zipcode: "zip",
-  "zipcode": "zip",
   postalcode: "zip",
   propertyzip: "zip",
   propertyzipcode: "zip",
