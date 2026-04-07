@@ -1,0 +1,212 @@
+{
+  "_meta": {
+    "description": "Maps internal field names used by vo360-outreach to actual BatchData API response field paths",
+    "api_base_url": "https://api.batchdata.com/api/v1",
+    "auth_header": "Authorization: Bearer {BATCHDATA_API_KEY}",
+    "primary_endpoint": "POST /property/search",
+    "lookup_endpoint": "POST /property/lookup/all-attributes",
+    "skip_trace_endpoint": "POST /property/skip-trace",
+    "pagination": {
+      "method": "offset-based via options.skip and options.take",
+      "skip_field": "options.skip",
+      "take_field": "options.take",
+      "total_count_response_field": "totalCount"
+    },
+    "rate_limits": {
+      "property_search": "1000 concurrent requests",
+      "address_geocoding": "90 per batch"
+    },
+    "notes": [
+      "Phone/email data requires options.skipTrace = true in the request",
+      "Each property returned counts as a billable API request",
+      "newConstruction flag exists in deedHistory records, NOT as a top-level search filter"
+    ]
+  },
+  "field_mapping": {
+    "property_id": "_id",
+    "property_address": "address.street",
+    "property_city": "address.city",
+    "property_state": "address.state",
+    "property_zip": "address.zip",
+    "property_county": "address.county",
+    "latitude": "address.latitude",
+    "longitude": "address.longitude",
+    "apn": "ids.apn",
+    "fips_code": "ids.fipsCode",
+
+    "property_type": "general.propertyTypeDetail",
+    "property_type_category": "general.propertyTypeCategory",
+    "land_use_code": "general.standardizedLandUseCode",
+    "is_vacant": "general.vacant",
+
+    "year_built": "building.yearBuilt",
+    "effective_year_built": "building.effectiveYearBuilt",
+    "bedrooms": "building.bedroomCount",
+    "bathrooms": "building.bathroomCount",
+    "full_bathrooms": "building.fullBathroomCount",
+    "partial_bathrooms": "building.partialBathroomCount",
+    "living_sqft": "building.livingAreaSquareFeet",
+    "total_building_sqft": "building.totalBuildingAreaSquareFeet",
+    "stories": "building.storyCount",
+    "garage_sqft": "building.garageSquareFeet",
+    "pool": "building.pool",
+    "construction_type": "building.constructionType",
+    "style": "building.style",
+
+    "lot_sqft": "lot.lotSizeSquareFeet",
+    "lot_acres": "lot.lotSizeAcres",
+
+    "assessed_value": "assessment.totalAssessedValue",
+    "market_value": "assessment.totalMarketValue",
+    "assessment_year": "assessment.assessmentYear",
+
+    "owner_name": "owner.fullName",
+    "owner_first_name": "owner.names[0].first",
+    "owner_last_name": "owner.names[0].last",
+    "owner_occupied": "owner.ownerOccupied",
+    "ownership_start_date": "owner.ownershipStartDate",
+    "length_of_residence_years": "owner.lengthOfResidenceYears",
+    "mailing_address_street": "owner.mailingAddress.street",
+    "mailing_address_city": "owner.mailingAddress.city",
+    "mailing_address_state": "owner.mailingAddress.state",
+    "mailing_address_zip": "owner.mailingAddress.zip",
+
+    "owner_phone_numbers": "owner.phoneNumbers",
+    "owner_phone_number": "owner.phoneNumbers[0].number",
+    "owner_phone_type": "owner.phoneNumbers[0].type",
+    "owner_phone_dnc": "owner.phoneNumbers[0].dnc",
+    "owner_phone_reachable": "owner.phoneNumbers[0].reachable",
+    "owner_phone_carrier": "owner.phoneNumbers[0].carrier",
+
+    "owner_emails": "owner.emails",
+    "owner_email": "owner.enrichedEmails[0].email",
+    "owner_email_tested": "owner.enrichedEmails[0].tested",
+
+    "tcpa_litigator": "owner.litigator",
+    "tcpa_dnc": "owner.dnc.tcpa",
+
+    "last_sale_date": "sale.lastSale.saleDate",
+    "last_sale_price": "sale.lastSale.price",
+    "last_sale_recording_date": "sale.lastSale.recordingDate",
+    "last_sale_price_per_sqft": "sale.lastSale.pricePerSquareFoot",
+    "last_sale_buyers": "sale.lastSale.saleBuyers",
+    "last_sale_sellers": "sale.lastSale.saleSellers",
+
+    "intel_last_sold_date": "intel.lastSoldDate",
+    "intel_last_sold_price": "intel.lastSoldPrice",
+
+    "prior_sale_date": "sale.priorSale.saleDate",
+    "prior_sale_price": "sale.priorSale.price",
+
+    "estimated_value": "valuation.estimatedValue",
+    "equity_dollars": "valuation.equityCurrentEstimatedBalance",
+    "equity_percent": "valuation.equityPercent",
+    "ltv": "valuation.ltv",
+    "avm_confidence": "valuation.confidenceScore",
+    "price_range_min": "valuation.priceRangeMin",
+    "price_range_max": "valuation.priceRangeMax",
+
+    "tax_amount": "tax.taxAmount",
+    "tax_year": "tax.taxYear",
+
+    "is_absentee_owner": "quickLists.absenteeOwner",
+    "is_cash_buyer": "quickLists.cashBuyer",
+    "is_corporate_owned": "quickLists.corporateOwned",
+    "is_free_and_clear": "quickLists.freeAndClear",
+    "is_high_equity": "quickLists.highEquity",
+    "is_low_equity": "quickLists.lowEquity",
+    "is_preforeclosure": "quickLists.preforeclosure",
+    "is_recently_sold": "quickLists.recentlySold",
+    "is_vacant_property": "quickLists.vacant",
+    "is_inherited": "quickLists.inherited",
+    "is_tired_landlord": "quickLists.tiredLandlord",
+    "is_senior_owner": "quickLists.seniorOwner",
+    "is_trust_owned": "quickLists.trustOwned",
+
+    "new_construction": "deedHistory[n].newConstruction"
+  },
+  "search_request_schema": {
+    "searchCriteria": {
+      "address": {
+        "city": "string",
+        "state": "string - 2 letter",
+        "zip": "string",
+        "geoLocationBoundingBox": {
+          "nwGeoPoint": { "latitude": "number", "longitude": "number" },
+          "seGeoPoint": { "latitude": "number", "longitude": "number" }
+        },
+        "geoLocationDistance": {
+          "geoPoint": { "latitude": "number", "longitude": "number" },
+          "distanceKilometers": "number"
+        }
+      },
+      "general": {
+        "propertyTypeDetail": ["string - e.g. Single Family Residential"]
+      },
+      "intel": {
+        "lastSoldDate": {
+          "minDate": "string - YYYY-MM-DD",
+          "maxDate": "string - YYYY-MM-DD"
+        }
+      },
+      "valuation": "object - market value range filters",
+      "query": "string - free-text search"
+    },
+    "options": {
+      "skip": "number - offset for pagination (default 0)",
+      "take": "number - results per page",
+      "skipTrace": "boolean - include phone/email data (extra cost)",
+      "useDistance": "boolean",
+      "distanceMiles": "number",
+      "useBedrooms": "boolean",
+      "minBedrooms": "number",
+      "maxBedrooms": "number",
+      "useBathrooms": "boolean",
+      "minBathrooms": "number",
+      "maxBathrooms": "number",
+      "useYearBuilt": "boolean",
+      "minYearBuilt": "number",
+      "maxYearBuilt": "number"
+    }
+  },
+  "quick_list_filter_values": [
+    "absentee-owner",
+    "in-state-absentee-owner",
+    "out-of-state-absentee-owner",
+    "for-sale-by-owner",
+    "active-auction",
+    "active-listing",
+    "canceled-listing",
+    "cash-buyer",
+    "corporate-owned",
+    "expired-listing",
+    "failed-listing",
+    "fix-and-flip",
+    "free-and-clear",
+    "has-hoa",
+    "has-hoa-fees",
+    "high-equity",
+    "inherited",
+    "involuntary-lien",
+    "listed-below-market-price",
+    "low-equity",
+    "mailing-address-vacant",
+    "notice-of-default",
+    "notice-of-lis-pendens",
+    "notice-of-sale",
+    "on-market",
+    "out-of-state-owner",
+    "owner-occupied",
+    "pending-listing",
+    "preforeclosure",
+    "recently-sold",
+    "same-property-and-mailing-address",
+    "senior-owner",
+    "tax-default",
+    "tired-landlord",
+    "trust-owned",
+    "unknown-equity",
+    "vacant",
+    "vacant-lot"
+  ]
+}
