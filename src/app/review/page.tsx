@@ -53,8 +53,9 @@ export default function ReviewPage() {
       if (!scoreRes.ok) throw new Error("Scoring failed");
       const scoreData = await scoreRes.json();
 
-      scored = leads.map((lead, i) => {
-        const s = scoreData.scores?.[i] ?? { score: 5, reason: "" };
+      scored = leads.map((lead) => {
+        const s = (scoreData.scores as Array<{ phone: string; score: number; reason: string }>)
+          ?.find((sc) => sc.phone === lead.phone) ?? { score: 5, reason: "" };
         return {
           ...lead,
           id: uuidv4(),
@@ -82,9 +83,10 @@ export default function ReviewPage() {
       if (!msgRes.ok) throw new Error("Message generation failed");
       const msgData = await msgRes.json();
 
-      const withMessages = scored.map((lead, i) => ({
+      const msgs = msgData.messages as Array<{ phone: string; message: string }>;
+      const withMessages = scored.map((lead) => ({
         ...lead,
-        message: msgData.messages?.[i] ?? "",
+        message: msgs?.find((m) => m.phone === lead.phone)?.message ?? "",
       }));
 
       setState({ kind: "ready", leads: withMessages });
@@ -106,11 +108,12 @@ export default function ReviewPage() {
       if (!msgRes.ok) throw new Error("Message generation failed");
       const msgData = await msgRes.json();
 
+      const msgs = msgData.messages as Array<{ phone: string; message: string }>;
       setState({
         kind: "ready",
-        leads: state.leads.map((lead, i) => ({
+        leads: state.leads.map((lead) => ({
           ...lead,
-          message: msgData.messages?.[i] ?? lead.message,
+          message: msgs?.find((m) => m.phone === lead.phone)?.message ?? lead.message,
         })),
       });
     } catch {

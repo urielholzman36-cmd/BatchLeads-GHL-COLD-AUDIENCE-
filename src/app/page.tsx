@@ -28,7 +28,7 @@ export default function UploadPage() {
 
     const phones = leads.map((l) => l.phone).filter(Boolean);
 
-    let alreadyContacted: string[] = [];
+    let dedupResults: Record<string, boolean> = {};
     try {
       const res = await fetch("/api/dedup", {
         method: "POST",
@@ -37,14 +37,13 @@ export default function UploadPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        alreadyContacted = data.alreadyContacted ?? [];
+        dedupResults = data.results ?? {};
       }
     } catch {
       // dedup failure is non-fatal; proceed with all leads
     }
 
-    const contactedSet = new Set(alreadyContacted);
-    const newLeads = leads.filter((l) => !contactedSet.has(l.phone));
+    const newLeads = leads.filter((l) => !dedupResults[l.phone]);
     const skipped = leads.length - newLeads.length;
 
     setStatus({ kind: "done", newLeads, skipped });
