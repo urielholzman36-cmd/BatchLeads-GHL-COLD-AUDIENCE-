@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import type { Lead } from "./types";
 
 // Normalize a column header to a consistent lowercase no-space/underscore form
@@ -6,16 +7,17 @@ function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[\s_\-./]+/g, "");
 }
 
-// Map of normalized column keys → Lead field names
-const COLUMN_MAP: Record<string, keyof Lead> = {
+// Map of normalized column keys → Lead field names (or filter-only fields)
+const COLUMN_MAP: Record<string, string> = {
   // firstName
   firstname: "firstName",
   first: "firstName",
   // lastName
   lastname: "lastName",
   last: "lastName",
-  // phone
+  // phone — BatchLeads uses "Phone 1"
   phone: "phone",
+  phone1: "phone",
   phonenumber: "phone",
   primaryphone: "phone",
   mobilephone: "phone",
@@ -25,51 +27,57 @@ const COLUMN_MAP: Record<string, keyof Lead> = {
   address: "propertyAddress",
   street: "propertyAddress",
   streetaddress: "propertyAddress",
-  // city
+  // city — BatchLeads uses "Property City"
   city: "city",
   propertycity: "city",
-  // state
+  // state — BatchLeads uses "Property State"
   state: "state",
   propertystate: "state",
-  // zip
+  // zip — BatchLeads uses "Property Zip"
   zip: "zip",
   zipcode: "zip",
   postalcode: "zip",
   propertyzip: "zip",
   propertyzipcode: "zip",
-  // propertyType
+  // propertyType — BatchLeads uses "Property Type Detail"
   propertytype: "propertyType",
+  propertytypedetail: "propertyType",
   type: "propertyType",
-  // bedrooms
+  // bedrooms — BatchLeads uses "Bedroom Count"
   beds: "bedrooms",
   bedrooms: "bedrooms",
+  bedroomcount: "bedrooms",
   numberbeds: "bedrooms",
   numberbedrooms: "bedrooms",
-  // bathrooms
+  // bathrooms — BatchLeads uses "Bathroom Count"
   baths: "bathrooms",
   bathrooms: "bathrooms",
+  bathroomcount: "bathrooms",
   numberbaths: "bathrooms",
   numberbathrooms: "bathrooms",
-  // sqft
+  // sqft — BatchLeads uses "Total Building Area Square Feet"
   sqft: "sqft",
   squarefeet: "sqft",
   livingsqft: "sqft",
   livingarea: "sqft",
   livingareasqft: "sqft",
   buildingareasqft: "sqft",
+  livingareasquarefeet: "sqft",
+  totalbuildingareasquarefeet: "sqft",
   // yearBuilt
   yearbuilt: "yearBuilt",
-  // estimatedValue
+  // estimatedValue — BatchLeads uses "Estimated Value"
   estimatedvalue: "estimatedValue",
   marketvalue: "estimatedValue",
   estimatedhomevalue: "estimatedValue",
   avm: "estimatedValue",
-  // equityPercent
+  // equityPercent — BatchLeads doesn't export a % directly, but has LTV
   "equity%": "equityPercent",
   equitypercent: "equityPercent",
   equity: "equityPercent",
   equityperc: "equityPercent",
   equitypercentage: "equityPercent",
+  ltvcurrentestimatedcombined: "equityPercent",
   // ownerOccupied
   owneroccupied: "ownerOccupied",
   // lastSaleDate
@@ -86,11 +94,18 @@ const COLUMN_MAP: Record<string, keyof Lead> = {
   // freeAndClear
   freeandclear: "freeAndClear",
   freeclear: "freeAndClear",
+  // vacant — BatchLeads uses "Is Vacant"
+  isvacant: "isVacant",
+  vacant: "isVacant",
+  // DNC flag — BatchLeads uses "Phone 1 DNC"
+  phone1dnc: "phoneDnc",
+  // Litigator flag
+  litigator: "litigator",
 };
 
 function parseBool(value: string | undefined | null): boolean | null {
   if (value === undefined || value === null || value === "") return null;
-  const v = value.trim().toLowerCase();
+  const v = String(value).trim().toLowerCase();
   if (v === "yes" || v === "true" || v === "1" || v === "y") return true;
   if (v === "no" || v === "false" || v === "0" || v === "n") return false;
   return null;
@@ -98,10 +113,84 @@ function parseBool(value: string | undefined | null): boolean | null {
 
 function parseNumber(value: string | undefined | null): number | null {
   if (value === undefined || value === null || value === "") return null;
-  // Remove commas and $ signs
-  const cleaned = value.replace(/[$,]/g, "").trim();
+  // Remove commas, $ signs, % signs
+  const cleaned = String(value).replace(/[$,%]/g, "").trim();
   const n = parseFloat(cleaned);
   return isNaN(n) ? null : n;
+}
+
+function rowsToLeads(
+  rows: Record<string, string>[],
+  headers: string[]
+): Lead[] {
+  // Build a mapping from the actual header keys to Lead field names
+  const headerMapping: Record<string, string> = {};
+
+  for (const header of headers) {
+    const normalized = normalizeKey(header);
+    const field = COLUMN_MAP[normalized];
+    if (field) {
+      if (!Object.values(headerMapping).includes(field)) {
+        headerMapping[header] = field;
+      }
+    }
+  }
+
+  return rows
+    .map((row) => {
+      const raw: Record<string, string> = {};
+      for (const [header, field] of Object.entries(headerMapping)) {
+        raw[field] = row[header] ?? "";
+      }
+
+      // Skip rows with no phone number
+      const phone = raw.phone?.trim() ?? "";
+      if (!phone) return null;
+
+      // Skip DNC or litigator leads
+      if (parseBool(raw.phoneDnc) === true) return null;
+      if (parseBool(raw.litigator) === true) return null;
+
+      // Calculate equity percent from LTV if we got LTV instead of equity%
+      let equityPercent = parseNumber(raw.equityPercent);
+      if (equityPercent !== null) {
+        // Check if the source column was LTV — if so, convert to equity
+        const ltvMapped = Object.entries(headerMapping).find(
+          ([, field]) => field === "equityPercent"
+        );
+        if (ltvMapped) {
+          const normalizedHeader = normalizeKey(ltvMapped[0]);
+          if (normalizedHeader.includes("ltv")) {
+            equityPercent = Math.round((100 - equityPercent) * 10) / 10;
+          }
+        }
+      }
+
+      const lead: Lead = {
+        firstName: raw.firstName?.trim() ?? "",
+        lastName: raw.lastName?.trim() ?? "",
+        phone,
+        propertyAddress: raw.propertyAddress?.trim() ?? "",
+        city: raw.city?.trim() ?? "",
+        state: raw.state?.trim() ?? "",
+        zip: raw.zip?.trim() ?? "",
+        propertyType: raw.propertyType?.trim() ?? "",
+        bedrooms: parseNumber(raw.bedrooms),
+        bathrooms: parseNumber(raw.bathrooms),
+        sqft: parseNumber(raw.sqft),
+        yearBuilt: parseNumber(raw.yearBuilt),
+        estimatedValue: parseNumber(raw.estimatedValue),
+        equityPercent,
+        ownerOccupied: parseBool(raw.ownerOccupied),
+        lastSaleDate: raw.lastSaleDate?.trim() ?? "",
+        lastSalePrice: parseNumber(raw.lastSalePrice),
+        absenteeOwner: parseBool(raw.absenteeOwner),
+        freeAndClear: parseBool(raw.freeAndClear),
+      };
+
+      return lead;
+    })
+    .filter((lead): lead is Lead => lead !== null);
 }
 
 export function parseCSV(csvText: string): Lead[] {
@@ -113,50 +202,22 @@ export function parseCSV(csvText: string): Lead[] {
 
   if (!result.data || result.data.length === 0) return [];
 
-  // Build a mapping from the actual header keys to Lead field names
   const headers = Object.keys(result.data[0]);
-  const headerMapping: Record<string, keyof Lead> = {};
+  return rowsToLeads(result.data, headers);
+}
 
-  for (const header of headers) {
-    const normalized = normalizeKey(header);
-    const leadField = COLUMN_MAP[normalized];
-    if (leadField) {
-      // Only map first encountered column for each field
-      if (!Object.values(headerMapping).includes(leadField)) {
-        headerMapping[header] = leadField;
-      }
-    }
-  }
+export function parseXLSX(buffer: ArrayBuffer): Lead[] {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
 
-  return result.data.map((row) => {
-    // Build a partial record first
-    const raw: Partial<Record<keyof Lead, string>> = {};
-    for (const [header, leadField] of Object.entries(headerMapping)) {
-      raw[leadField] = row[header];
-    }
-
-    const lead: Lead = {
-      firstName: raw.firstName?.trim() ?? "",
-      lastName: raw.lastName?.trim() ?? "",
-      phone: raw.phone?.trim() ?? "",
-      propertyAddress: raw.propertyAddress?.trim() ?? "",
-      city: raw.city?.trim() ?? "",
-      state: raw.state?.trim() ?? "",
-      zip: raw.zip?.trim() ?? "",
-      propertyType: raw.propertyType?.trim() ?? "",
-      bedrooms: parseNumber(raw.bedrooms),
-      bathrooms: parseNumber(raw.bathrooms),
-      sqft: parseNumber(raw.sqft),
-      yearBuilt: parseNumber(raw.yearBuilt),
-      estimatedValue: parseNumber(raw.estimatedValue),
-      equityPercent: parseNumber(raw.equityPercent),
-      ownerOccupied: parseBool(raw.ownerOccupied),
-      lastSaleDate: raw.lastSaleDate?.trim() ?? "",
-      lastSalePrice: parseNumber(raw.lastSalePrice),
-      absenteeOwner: parseBool(raw.absenteeOwner),
-      freeAndClear: parseBool(raw.freeAndClear),
-    };
-
-    return lead;
+  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
+    defval: "",
+    raw: false,
   });
+
+  if (!rows || rows.length === 0) return [];
+
+  const headers = Object.keys(rows[0]);
+  return rowsToLeads(rows, headers);
 }

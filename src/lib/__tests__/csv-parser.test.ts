@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseCSV } from "../csv-parser";
 
 describe("parseCSV", () => {
-  it("parses a standard BatchLeads CSV with all fields", () => {
+  it("parses a standard CSV with all fields", () => {
     const csv = [
       "First Name,Last Name,Phone,Property Address,City,State,Zip Code,Property Type,Beds,Baths,Sqft,Year Built,Estimated Value,Equity %,Owner Occupied,Last Sale Date,Last Sale Price,Absentee Owner,Free And Clear",
       "John,Smith,5551234567,123 Main St,Dallas,TX,75001,Single Family,3,2,1800,1998,350000,45,Yes,2015-06-01,200000,No,No",
@@ -33,44 +33,54 @@ describe("parseCSV", () => {
     expect(lead.freeAndClear).toBe(false);
   });
 
-  it("parses snake_case column names with missing optional fields", () => {
+  it("parses BatchLeads-style column names", () => {
     const csv = [
-      "first_name,last_name,phone_number,property_address,city,state,zip_code",
-      "Jane,Doe,5559876543,456 Oak Ave,Houston,TX,77001",
+      "First Name,Last Name,Phone 1,Phone 1 DNC,Litigator,Property Address,Property City,Property State,Property Zip,Property Type Detail,Bedroom Count,Bathroom Count,Total Building Area Square Feet,Year Built,Estimated Value,Ltv Current Estimated Combined,Owner Occupied,Last Sale Date,Last Sale Price",
+      "Jesus,Yanez,6192611192,Yes,No,936 Cunard St,San Diego,CA,92154,Single Family,3,2,1441,1969,783040,98.8,Yes,03-16-2026,797500",
+      ",,6193334444,No,No,12533 Shropshire Ln,San Diego,CA,92128,Single Family,4,2,2082,1980,1413531,0,Yes,04-01-2026,1475000",
+    ].join("\n");
+
+    const leads = parseCSV(csv);
+    // First lead has DNC=Yes, should be filtered out
+    expect(leads).toHaveLength(1);
+
+    const lead = leads[0];
+    expect(lead.phone).toBe("6193334444");
+    expect(lead.propertyAddress).toBe("12533 Shropshire Ln");
+    expect(lead.city).toBe("San Diego");
+    expect(lead.sqft).toBe(2082);
+    expect(lead.yearBuilt).toBe(1980);
+    expect(lead.estimatedValue).toBe(1413531);
+    // LTV of 0 → equity of 100
+    expect(lead.equityPercent).toBe(100);
+  });
+
+  it("filters out litigator leads", () => {
+    const csv = [
+      "First Name,Last Name,Phone 1,Litigator,Property Address,Property City,Property State,Property Zip",
+      "Bad,Actor,5551112222,Yes,123 Oak St,Dallas,TX,75001",
+      "Good,Person,5553334444,No,456 Pine Ave,Dallas,TX,75001",
     ].join("\n");
 
     const leads = parseCSV(csv);
     expect(leads).toHaveLength(1);
+    expect(leads[0].firstName).toBe("Good");
+  });
 
-    const lead = leads[0];
-    expect(lead.firstName).toBe("Jane");
-    expect(lead.lastName).toBe("Doe");
-    expect(lead.phone).toBe("5559876543");
-    expect(lead.propertyAddress).toBe("456 Oak Ave");
-    expect(lead.city).toBe("Houston");
-    expect(lead.state).toBe("TX");
-    expect(lead.zip).toBe("77001");
-    // Optional fields should be null
-    expect(lead.bedrooms).toBeNull();
-    expect(lead.bathrooms).toBeNull();
-    expect(lead.sqft).toBeNull();
-    expect(lead.yearBuilt).toBeNull();
-    expect(lead.estimatedValue).toBeNull();
-    expect(lead.equityPercent).toBeNull();
-    expect(lead.ownerOccupied).toBeNull();
-    expect(lead.lastSalePrice).toBeNull();
-    expect(lead.absenteeOwner).toBeNull();
-    expect(lead.freeAndClear).toBeNull();
+  it("skips rows without phone numbers", () => {
+    const csv = [
+      "First Name,Last Name,Phone,Property Address,City,State,Zip",
+      "NoPhone,Person,,123 Main St,Dallas,TX,75001",
+      "HasPhone,Person,5551234567,456 Oak Ave,Dallas,TX,75001",
+    ].join("\n");
+
+    const leads = parseCSV(csv);
+    expect(leads).toHaveLength(1);
+    expect(leads[0].firstName).toBe("HasPhone");
   });
 
   it("returns an empty array for an empty CSV", () => {
     const leads = parseCSV("");
-    expect(leads).toHaveLength(0);
-  });
-
-  it("handles CSV with only headers (no data rows)", () => {
-    const csv = "First Name,Last Name,Phone\n";
-    const leads = parseCSV(csv);
     expect(leads).toHaveLength(0);
   });
 

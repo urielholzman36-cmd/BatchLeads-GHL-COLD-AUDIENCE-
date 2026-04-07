@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 interface UploadZoneProps {
-  onFileLoaded: (csvText: string) => void;
+  onFileLoaded: (file: File) => void;
 }
 
 export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
@@ -13,18 +13,14 @@ export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleFile(file: File) {
-    if (!file.name.endsWith(".csv")) {
-      setError("Please upload a .csv file.");
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "csv" && ext !== "xlsx" && ext !== "xls") {
+      setError("Please upload a .csv or .xlsx file.");
       return;
     }
     setError(null);
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      onFileLoaded(text);
-    };
-    reader.readAsText(file);
+    onFileLoaded(file);
   }
 
   function onDragOver(e: React.DragEvent) {
@@ -75,7 +71,7 @@ export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <p className="text-sm font-medium text-gray-700">
-              {isDragging ? "Drop your CSV here" : "Drag & drop a CSV file"}
+              {isDragging ? "Drop your file here" : "Drag & drop a CSV or Excel file"}
             </p>
             <p className="text-xs text-gray-500 mt-1">or <span className="text-blue-600 underline">click to browse</span></p>
           </>
@@ -85,7 +81,7 @@ export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
         id="csv-upload"
         ref={inputRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         className="hidden"
         onChange={onInputChange}
       />
