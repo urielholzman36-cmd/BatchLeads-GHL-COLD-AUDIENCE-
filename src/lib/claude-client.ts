@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Lead } from "./types";
 
 const MODEL = "claude-sonnet-4-6";
+const BATCH_SIZE = 15;
 
 function getClient(): Anthropic {
   return new Anthropic({
@@ -20,15 +21,14 @@ export interface MessageResult {
   message: string;
 }
 
-/**
- * Score a batch of leads 1-10 for home remodeling potential.
- * Returns an array of ScoreResult, one per lead.
- */
-export async function scoreLeads(leads: Lead[]): Promise<ScoreResult[]> {
-  const client = getClient();
-
+async function scoreBatch(
+  client: Anthropic,
+  leads: Lead[]
+): Promise<ScoreResult[]> {
   const leadsJson = leads.map((l) => ({
     phone: l.phone,
+    firstName: l.firstName,
+    lastName: l.lastName,
     propertyType: l.propertyType,
     yearBuilt: l.yearBuilt,
     estimatedValue: l.estimatedValue,
@@ -52,10 +52,9 @@ Scoring criteria:
 Leads to score:
 ${JSON.stringify(leadsJson, null, 2)}
 
-Return ONLY a JSON array with this exact shape (no markdown, no explanation):
+Return ONLY a JSON array with this exact shape (no markdown, no explanation, no code fences):
 [
-  { "phone": "...", "score": 7, "reason": "Brief 1-sentence reason" },
-  ...
+  { "phone": "...", "score": 7, "reason": "Brief 1-sentence reason" }
 ]`;
 
   const response = await client.messages.create({
@@ -69,70 +68,76 @@ Return ONLY a JSON array with this exact shape (no markdown, no explanation):
 
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) {
-    throw new Error("Claude scoreLeads: could not parse JSON array from response");
+    throw new Error(
+      "Claude scoreLeads: could not parse JSON array from response"
+    );
   }
 
-  const parsed = JSON.parse(match[0]) as Array<{
-    phone: string;
-    score: number;
-    reason: string;
-  }>;
-
-  return parsed.map((item) => ({
-    phone: item.phone,
-    score: item.score,
-    reason: item.reason,
-  }));
+  return JSON.parse(match[0]) as ScoreResult[];
 }
 
 /**
- * Generate personalized SMS messages for a batch of scored leads.
- * Returns an array of MessageResult, one per lead.
+ * Score leads in batches to avoid response truncation.
  */
-export async function generateMessages(
-  leads: Lead[],
-  guidelines?: string,
-  link?: string
-): Promise<MessageResult[]> {
+export async function scoreLeads(leads: Lead[]): Promise<ScoreResult[]> {
   const client = getClient();
+  const results: ScoreResult[] = [];
 
-  const leadsJson = leads.map((l) => ({
-    phone: l.phone,
-    firstName: l.firstName,
-    propertyAddress: l.propertyAddress,
-    city: l.city,
-    state: l.state,
-    propertyType: l.propertyType,
-  }));
+  for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+    const batch = leads.slice(i, i + BATCH_SIZE);
+    const batchResults = await scoreBatch(client, batch);
+    results.push(...batchResults);
+  }
 
+  return results;
+}
+
+async function generateMessageBatch(
+  client: Anthropic,
+  leads: Array<{
+    phone: string;
+    firstName: string;
+    propertyAddress: string;
+    city: string;
+    state: string;
+    propertyType: string;
+  }>,
+  guidelines: string,
+  link1: string,
+  link2: string
+): Promise<MessageResult[]> {
   let guidelinesSection = "";
   if (guidelines && guidelines.trim()) {
     guidelinesSection = `\nAdditional guidelines from the client:\n${guidelines.trim()}\n`;
   }
 
   let linkSection = "";
-  if (link && link.trim()) {
-    linkSection = `\nIncorporate this link naturally in the message: ${link.trim()}\n`;
+  if (link1.trim() && link2.trim()) {
+    linkSection = `\nIncorporate BOTH of these links naturally in each message:\n- Link 1: ${link1.trim()}\n- Link 2: ${link2.trim()}\n`;
+  } else if (link1.trim()) {
+    linkSection = `\nIncorporate this link naturally in the message: ${link1.trim()}\n`;
+  } else if (link2.trim()) {
+    linkSection = `\nIncorporate this link naturally in the message: ${link2.trim()}\n`;
   }
 
   const prompt = `You are a copywriter for a home remodeling company called VO360. Write personalized SMS messages for each lead.
 
 Rules:
-- Under 160 characters total (including link if provided)
-- Use the lead's first name
+- Under 160 characters total (unless links make it longer, that's OK)
+- If the lead has a first name, use it. If not, use a friendly generic greeting like "Hi there" or "Hey neighbor"
 - Mention their street address or neighborhood to feel personal
 - Keep a casual, friendly tone
 - Soft call-to-action (never pushy or salesy)
 - NEVER mention equity, property value, ownership status, or financial details
 - Sound like a neighbor, not a corporation
+- Each message must be unique
 ${guidelinesSection}${linkSection}
 Leads:
-${JSON.stringify(leadsJson, null, 2)}
+${JSON.stringify(leads, null, 2)}
 
-Return ONLY a JSON array with this exact shape (no markdown, no explanation):
+Return ONLY a JSON array with this exact shape (no markdown, no explanation, no code fences):
 [
-  { "phone": "...", "message": "..." },
-  ...
+  { "phone": "...", "message": "..." }
 ]`;
 
   const response = await client.messages.create({
@@ -151,13 +156,40 @@ Return ONLY a JSON array with this exact shape (no markdown, no explanation):
     );
   }
 
-  const parsed = JSON.parse(match[0]) as Array<{
-    phone: string;
-    message: string;
-  }>;
+  return JSON.parse(match[0]) as MessageResult[];
+}
 
-  return parsed.map((item) => ({
-    phone: item.phone,
-    message: item.message,
-  }));
+/**
+ * Generate messages in batches.
+ * Now accepts link1 and link2 instead of a single link.
+ */
+export async function generateMessages(
+  leads: Array<{
+    phone: string;
+    firstName: string;
+    propertyAddress: string;
+    city: string;
+    state: string;
+    propertyType: string;
+  }>,
+  guidelines?: string,
+  link1?: string,
+  link2?: string
+): Promise<MessageResult[]> {
+  const client = getClient();
+  const results: MessageResult[] = [];
+
+  for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+    const batch = leads.slice(i, i + BATCH_SIZE);
+    const batchResults = await generateMessageBatch(
+      client,
+      batch,
+      guidelines || "",
+      link1 || "",
+      link2 || ""
+    );
+    results.push(...batchResults);
+  }
+
+  return results;
 }

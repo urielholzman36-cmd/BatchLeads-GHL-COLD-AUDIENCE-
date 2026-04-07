@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMessages } from "@/lib/claude-client";
-import type { Lead } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -12,12 +11,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const leads: Lead[] = body.leads;
+  const leads = body.leads;
   const guidelines: string = body.guidelines || "";
-  const link: string = body.link || "";
+  const link1: string = body.link1 || body.link || "";
+  const link2: string = body.link2 || "";
 
   try {
-    const messages = await generateMessages(leads, guidelines, link);
+    const messages = await generateMessages(leads, guidelines, link1, link2);
     return NextResponse.json({ messages });
   } catch (err) {
     console.error("[generate-messages] error:", err);

@@ -16,7 +16,8 @@ export default function ReviewPage() {
   const router = useRouter();
   const [state, setState] = useState<PageState>({ kind: "loading", message: "Scoring leads..." });
   const [guidelines, setGuidelines] = useState("");
-  const [link, setLink] = useState("");
+  const [link1, setLink1] = useState("");
+  const [link2, setLink2] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const rawLeadsRef = useRef<Lead[]>([]);
 
@@ -36,12 +37,12 @@ export default function ReviewPage() {
     }
 
     rawLeadsRef.current = leads;
-    runScoringAndMessages(leads, "", "");
+    runScoringAndMessages(leads, "", "", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function runScoringAndMessages(leads: Lead[], currentGuidelines: string, currentLink: string) {
-    setState({ kind: "loading", message: "Scoring leads with AI..." });
+  async function runScoringAndMessages(leads: Lead[], currentGuidelines: string, currentLink1: string, currentLink2: string) {
+    setState({ kind: "loading", message: `Scoring ${leads.length} leads with AI...` });
 
     let scored: ScoredLead[];
     try {
@@ -50,7 +51,10 @@ export default function ReviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leads }),
       });
-      if (!scoreRes.ok) throw new Error("Scoring failed");
+      if (!scoreRes.ok) {
+        const err = await scoreRes.json().catch(() => ({}));
+        throw new Error(err.error || "Scoring failed");
+      }
       const scoreData = await scoreRes.json();
 
       scored = leads.map((lead) => {
@@ -72,15 +76,27 @@ export default function ReviewPage() {
       return;
     }
 
-    setState({ kind: "loading", message: "Generating personalized messages..." });
+    setState({ kind: "loading", message: `Generating personalized messages for ${scored.length} leads...` });
 
     try {
+      const msgLeads = scored.map((l) => ({
+        phone: l.phone,
+        firstName: l.firstName,
+        propertyAddress: l.propertyAddress,
+        city: l.city,
+        state: l.state,
+        propertyType: l.propertyType,
+      }));
+
       const msgRes = await fetch("/api/generate-messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: scored, guidelines: currentGuidelines, link: currentLink }),
+        body: JSON.stringify({ leads: msgLeads, guidelines: currentGuidelines, link1: currentLink1, link2: currentLink2 }),
       });
-      if (!msgRes.ok) throw new Error("Message generation failed");
+      if (!msgRes.ok) {
+        const err = await msgRes.json().catch(() => ({}));
+        throw new Error(err.error || "Message generation failed");
+      }
       const msgData = await msgRes.json();
 
       const msgs = msgData.messages as Array<{ phone: string; message: string }>;
@@ -100,10 +116,19 @@ export default function ReviewPage() {
     setRegenerating(true);
 
     try {
+      const msgLeads = state.leads.map((l) => ({
+        phone: l.phone,
+        firstName: l.firstName,
+        propertyAddress: l.propertyAddress,
+        city: l.city,
+        state: l.state,
+        propertyType: l.propertyType,
+      }));
+
       const msgRes = await fetch("/api/generate-messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: state.leads, guidelines, link }),
+        body: JSON.stringify({ leads: msgLeads, guidelines, link1, link2 }),
       });
       if (!msgRes.ok) throw new Error("Message generation failed");
       const msgData = await msgRes.json();
@@ -149,7 +174,30 @@ export default function ReviewPage() {
     });
   }
 
-  function handleSendSelected() {
+  function handleExportForPartner() {
+    if (state.kind !== "ready") return;
+    const selected = state.leads.filter((l) => l.selected);
+    if (selected.length === 0) return;
+
+    const headers = ["Phone", "First Name", "Last Name", "Message"];
+    const rows = selected.map((l) => [
+      l.phone,
+      l.firstName,
+      l.lastName,
+      `"${l.message.replace(/"/g, '""')}"`,
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `outreach-export-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleSendViaGHL() {
     if (state.kind !== "ready") return;
     const toSend = state.leads.filter((l) => l.selected);
     if (toSend.length === 0) return;
@@ -170,16 +218,28 @@ export default function ReviewPage() {
           )}
         </div>
         {state.kind === "ready" && (
-          <button
-            onClick={handleSendSelected}
-            disabled={selectedCount === 0}
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-5 py-2.5 rounded-lg transition-colors"
-          >
-            Send Selected ({selectedCount})
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportForPartner}
+              disabled={selectedCount === 0}
+              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-5 py-2.5 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export for Partner ({selectedCount})
+            </button>
+            <button
+              onClick={handleSendViaGHL}
+              disabled={selectedCount === 0}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-5 py-2.5 rounded-lg transition-colors"
+            >
+              Send via GHL ({selectedCount})
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -208,55 +268,69 @@ export default function ReviewPage() {
       {state.kind === "ready" && (
         <>
           {/* Controls */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Message Guidelines <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={guidelines}
-                onChange={(e) => setGuidelines(e.target.value)}
-                placeholder="e.g., Mention spring discount on kitchens..."
-                rows={2}
-                className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
+          <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message Guidelines <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={guidelines}
+                  onChange={(e) => setGuidelines(e.target.value)}
+                  placeholder="e.g., Mention spring discount on kitchens..."
+                  rows={2}
+                  className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Link 1 <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={link1}
+                    onChange={(e) => setLink1(e.target.value)}
+                    placeholder="https://your-website.com"
+                    className="w-full text-sm border border-gray-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Link 2 <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={link2}
+                    onChange={(e) => setLink2(e.target.value)}
+                    placeholder="https://booking-link.com"
+                    className="w-full text-sm border border-gray-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Link <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <input
-                type="url"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                placeholder="https://your-website.com or booking link"
-                className="w-full text-sm border border-gray-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-            <div className="flex items-end">
-              <button
-                onClick={handleRegenerate}
-                disabled={regenerating}
-                className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-medium px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
-              >
-                {regenerating ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    Regenerating...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Regenerate Messages
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-medium px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+            >
+              {regenerating ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Regenerating...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Regenerate Messages
+                </>
+              )}
+            </button>
           </div>
 
           {/* Lead Table */}
