@@ -20,8 +20,12 @@ export default function ReviewPage() {
   const [link2, setLink2] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const rawLeadsRef = useRef<Lead[]>([]);
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
+    if (hasRunRef.current) return;
+    hasRunRef.current = true;
+
     const stored = sessionStorage.getItem("outreach_leads");
     if (!stored) {
       router.replace("/");

@@ -77,19 +77,21 @@ Return ONLY a JSON array with this exact shape (no markdown, no explanation, no 
 }
 
 /**
- * Score leads in batches to avoid response truncation.
+ * Score leads in parallel batches to avoid response truncation.
  */
 export async function scoreLeads(leads: Lead[]): Promise<ScoreResult[]> {
   const client = getClient();
-  const results: ScoreResult[] = [];
+  const batches: Lead[][] = [];
 
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
-    const batch = leads.slice(i, i + BATCH_SIZE);
-    const batchResults = await scoreBatch(client, batch);
-    results.push(...batchResults);
+    batches.push(leads.slice(i, i + BATCH_SIZE));
   }
 
-  return results;
+  const batchResults = await Promise.all(
+    batches.map((batch) => scoreBatch(client, batch))
+  );
+
+  return batchResults.flat();
 }
 
 async function generateMessageBatch(
@@ -177,19 +179,23 @@ export async function generateMessages(
   link2?: string
 ): Promise<MessageResult[]> {
   const client = getClient();
-  const results: MessageResult[] = [];
+  const batches: typeof leads[] = [];
 
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
-    const batch = leads.slice(i, i + BATCH_SIZE);
-    const batchResults = await generateMessageBatch(
-      client,
-      batch,
-      guidelines || "",
-      link1 || "",
-      link2 || ""
-    );
-    results.push(...batchResults);
+    batches.push(leads.slice(i, i + BATCH_SIZE));
   }
 
-  return results;
+  const batchResults = await Promise.all(
+    batches.map((batch) =>
+      generateMessageBatch(
+        client,
+        batch,
+        guidelines || "",
+        link1 || "",
+        link2 || ""
+      )
+    )
+  );
+
+  return batchResults.flat();
 }
