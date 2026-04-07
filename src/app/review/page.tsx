@@ -12,6 +12,11 @@ type PageState =
   | { kind: "error"; message: string }
   | { kind: "ready"; leads: ScoredLead[] };
 
+interface SummaryData {
+  summary: string;
+  hiddenGems: Array<{ phone: string; reason: string }>;
+}
+
 export default function ReviewPage() {
   const router = useRouter();
   const [state, setState] = useState<PageState>({ kind: "loading", message: "Scoring leads..." });
@@ -19,6 +24,7 @@ export default function ReviewPage() {
   const [link1, setLink1] = useState("");
   const [link2, setLink2] = useState("");
   const [regenerating, setRegenerating] = useState(false);
+  const [summary, setSummary] = useState<SummaryData | null>(null);
   const rawLeadsRef = useRef<Lead[]>([]);
   const hasRunRef = useRef(false);
 
@@ -110,9 +116,40 @@ export default function ReviewPage() {
       }));
 
       setState({ kind: "ready", leads: withMessages });
+
+      // Fetch summary in the background (non-blocking)
+      fetch("/api/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leads: withMessages.map((l) => ({
+            phone: l.phone,
+            firstName: l.firstName,
+            lastName: l.lastName,
+            propertyAddress: l.propertyAddress,
+            city: l.city,
+            score: l.score,
+            scoreReason: l.scoreReason,
+          })),
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && data.summary) setSummary(data);
+        })
+        .catch(() => {
+          // Summary failure is non-fatal
+        });
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : "Message generation failed" });
     }
+  }
+
+  function getScoreDistribution(leads: ScoredLead[]) {
+    const high = leads.filter((l) => l.score >= 7).length;
+    const medium = leads.filter((l) => l.score >= 4 && l.score < 7).length;
+    const low = leads.filter((l) => l.score < 4).length;
+    return { high, medium, low };
   }
 
   async function handleRegenerate() {
@@ -271,6 +308,70 @@ export default function ReviewPage() {
       {/* Ready */}
       {state.kind === "ready" && (
         <>
+          {/* Summary Panel */}
+          {(() => {
+            const dist = getScoreDistribution(state.leads);
+            return (
+              <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+                  Scoring Summary
+                </h2>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="text-center p-3 rounded-lg bg-green-50 border border-green-100">
+                    <div className="text-2xl font-bold text-green-700">{dist.high}</div>
+                    <div className="text-xs text-green-600 font-medium mt-1">HIGH (7-10)</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-yellow-50 border border-yellow-100">
+                    <div className="text-2xl font-bold text-yellow-700">{dist.medium}</div>
+                    <div className="text-xs text-yellow-600 font-medium mt-1">MEDIUM (4-6)</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-red-50 border border-red-100">
+                    <div className="text-2xl font-bold text-red-700">{dist.low}</div>
+                    <div className="text-xs text-red-600 font-medium mt-1">LOW (1-3)</div>
+                  </div>
+                </div>
+
+                {summary ? (
+                  <>
+                    <div className="mb-4">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        AI Analysis
+                      </div>
+                      <p className="text-sm text-gray-700 leading-relaxed">{summary.summary}</p>
+                    </div>
+
+                    {summary.hiddenGems.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                          💎 Hidden Gems (lower-scored leads worth a look)
+                        </div>
+                        <div className="space-y-2">
+                          {summary.hiddenGems.map((gem) => {
+                            const lead = state.leads.find((l) => l.phone === gem.phone);
+                            if (!lead) return null;
+                            return (
+                              <div
+                                key={gem.phone}
+                                className="text-sm border-l-2 border-blue-300 pl-3 py-1"
+                              >
+                                <div className="font-medium text-gray-800">
+                                  {lead.firstName} {lead.lastName} · Score {lead.score} · {lead.propertyAddress}
+                                </div>
+                                <div className="text-gray-600 text-xs mt-0.5">{gem.reason}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500 italic">Generating AI analysis...</div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Controls */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
