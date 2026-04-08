@@ -3,7 +3,6 @@ import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import Image from "next/image";
 import "./globals.css";
 import Link from "next/link";
-import { ClerkProvider, UserButton } from "@clerk/nextjs";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -35,8 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
-      <html
+    <html
         lang="en"
         className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
       >
@@ -88,13 +86,11 @@ export default function RootLayout({
                 >
                   <span className="text-base leading-none">+</span> New Session
                 </Link>
-                <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
               </div>
             </div>
           </nav>
           <main className="max-w-7xl mx-auto px-4 md:px-6 pt-24 pb-16">{children}</main>
         </body>
       </html>
-    </ClerkProvider>
   );
 }
