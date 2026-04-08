@@ -209,3 +209,39 @@ describe("scoreLead — Property Condition (25 pts)", () => {
     expect(r.breakdown.condition.details.size).toBe(pts);
   });
 });
+
+describe("scoreLead — Timing (20 pts)", () => {
+  const NOW_ISO = "2026-04-08";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ["03-20-2026", 12], // ~19 days ago → <60d
+    ["01-15-2026", 9],  // ~83 days
+    ["09-15-2025", 5],  // ~205 days
+    ["05-01-2024", 2],  // ~2 years
+    ["01-01-2020", 0],  // 6 years
+  ])("recent purchase %s → %i pts", (date, pts) => {
+    const r = scoreLead(makeLead({ lastSaleDate: date }));
+    expect(r.breakdown.timing.details.recentPurchase).toBe(pts);
+  });
+
+  it("refi: 0 pts when loan recording date is same as sale date (original mortgage)", () => {
+    const r = scoreLead(makeLead({ lastSaleDate: "01-01-2010", loanRecordingDate: "01-05-2010" }));
+    expect(r.breakdown.timing.details.recentRefi).toBe(0);
+  });
+
+  it.each([
+    ["12-01-2025", 8], // <6 mo
+    ["07-01-2025", 5], // ~9 mo
+    ["07-01-2024", 2], // ~21 mo
+    ["01-01-2020", 0],
+  ])("refi recording %s → %i pts (with old sale date)", (date, pts) => {
+    const r = scoreLead(makeLead({ lastSaleDate: "01-01-2010", loanRecordingDate: date }));
+    expect(r.breakdown.timing.details.recentRefi).toBe(pts);
+  });
+});

@@ -150,6 +150,37 @@ function scoreCondition(lead: Lead): ScoreBreakdown["condition"] {
   return { score: yearBuilt + assessedGap + size, max: 25, details: { yearBuilt, assessedGap, size } };
 }
 
+function scoreTiming(lead: Lead): ScoreBreakdown["timing"] {
+  const now = NOW();
+
+  let recentPurchase = 0;
+  const sale = parseDate(lead.lastSaleDate);
+  if (sale) {
+    const days = daysBetween(now, sale);
+    if (days < 60) recentPurchase = 12;
+    else if (days < 180) recentPurchase = 9;
+    else if (days < 365) recentPurchase = 5;
+    else if (days < 365 * 3) recentPurchase = 2;
+    else recentPurchase = 0;
+  }
+
+  let recentRefi = 0;
+  const refi = parseDate(lead.loanRecordingDate);
+  if (refi && sale) {
+    // Only count as refi if recording is meaningfully later than sale (>30 days)
+    const gapFromSale = daysBetween(refi, sale);
+    if (gapFromSale > 30) {
+      const days = daysBetween(now, refi);
+      if (days < 180) recentRefi = 8;
+      else if (days < 365) recentRefi = 5;
+      else if (days < 365 * 2) recentRefi = 2;
+      else recentRefi = 0;
+    }
+  }
+
+  return { score: recentPurchase + recentRefi, max: 20, details: { recentPurchase, recentRefi } };
+}
+
 export function scoreLead(lead: Lead): LeadScore {
   const dq = checkDiscard(lead);
   if (dq) return discard(dq.reason, dq.cleaned);
@@ -158,8 +189,9 @@ export function scoreLead(lead: Lead): LeadScore {
   const breakdown = emptyBreakdown();
   breakdown.financial = scoreFinancial(lead);
   breakdown.condition = scoreCondition(lead);
+  breakdown.timing = scoreTiming(lead);
 
-  const total = breakdown.financial.score + breakdown.condition.score;
+  const total = breakdown.financial.score + breakdown.condition.score + breakdown.timing.score;
   return { total, bucket: bucketFor(total), breakdown, cleanedPhones };
 }
 
