@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import UploadZone from "@/components/upload-zone";
 import { parseCSV, parseXLSX } from "@/lib/csv-parser";
 import type { Lead } from "@/lib/types";
+import { loadHistory, deleteSession, type OutreachSession } from "@/lib/history";
 
 type Status =
   | { kind: "idle" }
@@ -16,6 +18,21 @@ type Status =
 export default function UploadPage() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [history, setHistory] = useState<OutreachSession[]>([]);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  function openSession(session: OutreachSession) {
+    sessionStorage.setItem("outreach_leads", JSON.stringify(session.rawLeads));
+    router.push("/review");
+  }
+
+  function removeSession(id: string) {
+    deleteSession(id);
+    setHistory(loadHistory());
+  }
 
   async function handleFileLoaded(file: File) {
     setStatus({ kind: "parsing" });
@@ -73,13 +90,78 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Upload Leads</h1>
-      <p className="text-gray-500 mb-8">
-        Upload a CSV or Excel file from BatchLeads. We&apos;ll check for duplicates and score each lead automatically.
-      </p>
+    <div className="max-w-6xl mx-auto">
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-[2rem] mb-12 animate-rise">
+        {/* Gradient backdrop */}
+        <div className="absolute inset-0 vo360-gradient-animated opacity-95" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0b1020]/40 via-transparent to-transparent" />
 
-      <UploadZone onFileLoaded={handleFileLoaded} />
+        {/* Decorative orbits */}
+        <div className="absolute top-1/2 right-[-120px] -translate-y-1/2 w-[520px] h-[520px] rounded-full border border-white/15 animate-spin-slow pointer-events-none" />
+        <div className="absolute top-1/2 right-[-80px] -translate-y-1/2 w-[380px] h-[380px] rounded-full border border-white/20 animate-spin-slow pointer-events-none" style={{ animationDirection: "reverse", animationDuration: "22s" }} />
+        <div className="absolute top-1/2 right-[-40px] -translate-y-1/2 w-[240px] h-[240px] rounded-full border border-white/25 animate-spin-slow pointer-events-none" />
+
+        {/* Glow blobs */}
+        <div className="absolute -top-32 -left-20 w-80 h-80 rounded-full bg-[#ff7a1a] opacity-30 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-[-100px] left-1/3 w-96 h-96 rounded-full bg-[#1e2a78] opacity-50 blur-3xl pointer-events-none" />
+
+        <div className="relative grid md:grid-cols-[1.4fr_1fr] gap-6 px-8 md:px-12 py-10 md:py-12">
+          <div className="text-white">
+            <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] font-semibold text-white/90 bg-white/10 border border-white/20 backdrop-blur-md rounded-full px-3 py-1.5 mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              Your Intelligent Execution Partner
+            </div>
+            <h1 className="font-display text-3xl md:text-4xl lg:text-[2.75rem] font-light leading-[1.1] tracking-tight">
+              Cold leads, <span className="italic font-medium">warmed by</span> <span className="font-bold">intelligence.</span>
+            </h1>
+            <p className="text-white/80 mt-4 max-w-md text-sm leading-relaxed">
+              Upload a BatchLeads export. We dedupe, score every contact 1–10 with Claude, and draft personalized SMS — ready to fire through GoHighLevel.
+            </p>
+
+            <div className="mt-5 flex flex-wrap gap-5 text-xs text-white/80">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center font-bold text-white text-xs">1</span>
+                Upload
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center font-bold text-white text-xs">2</span>
+                Score
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center font-bold text-white text-xs">3</span>
+                Send via GHL
+              </div>
+            </div>
+          </div>
+
+          {/* Logo showcase */}
+          <div className="hidden md:flex items-center justify-center relative">
+            <div className="absolute inset-0 bg-white/10 backdrop-blur-sm rounded-full blur-2xl" />
+            <div className="relative animate-float">
+              <Image
+                src="/vo360-logo.png"
+                alt="VO360"
+                width={220}
+                height={220}
+                priority
+                className="drop-shadow-[0_20px_50px_rgba(0,0,0,0.4)]"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Upload card */}
+      <div className="max-w-2xl mx-auto -mt-2 animate-rise" style={{ animationDelay: "0.15s" }}>
+        <div className="rounded-3xl border border-white/60 bg-white/80 backdrop-blur-md p-6 shadow-[0_30px_80px_-40px_rgba(30,42,120,0.4)]">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-6 rounded-full vo360-gradient-bg" />
+            <h2 className="font-display text-xl font-semibold text-[#0b1020]">
+              Drop your file
+            </h2>
+          </div>
+          <UploadZone onFileLoaded={handleFileLoaded} />
 
       {status.kind !== "idle" && (
         <div className="mt-6 p-4 rounded-xl border border-gray-200 bg-white">
@@ -133,6 +215,111 @@ export default function UploadPage() {
             <p className="text-red-600">{status.message}</p>
           )}
         </div>
+      )}
+        </div>
+      </div>
+
+      {/* Recent Uploads */}
+      {history.length > 0 && (
+        <section className="mt-20 animate-rise" style={{ animationDelay: "0.3s" }}>
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.25em] font-semibold text-[#1e2a78]/70 flex items-center gap-2">
+                <span className="w-6 h-px bg-[#1e2a78]/30" />
+                History
+              </div>
+              <h2 className="font-display text-4xl font-light text-[#0b1020] mt-2 tracking-tight">
+                Your <span className="italic">recent</span> sessions
+              </h2>
+            </div>
+            <span className="text-xs text-gray-500">
+              {history.length} session{history.length === 1 ? "" : "s"} cached locally
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {history.map((s) => {
+              const scored = s.scoredLeads ?? [];
+              const high = scored.filter((l) => l.bucket === "HIGH").length;
+              const medium = scored.filter((l) => l.bucket === "MEDIUM").length;
+              const low = scored.filter((l) => l.bucket === "LOW").length;
+              const date = new Date(s.createdAt);
+              return (
+                <div
+                  key={s.id}
+                  className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 hover:border-[#d633a0]/40 hover:shadow-[0_20px_50px_-30px_rgba(214,51,160,0.5)] transition-all cursor-pointer"
+                  onClick={() => openSession(s)}
+                >
+                  <div className="absolute inset-x-0 top-0 h-1 vo360-gradient-bg opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-gray-400">
+                        {date.toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}{" "}
+                        ·{" "}
+                        {date.toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                      <div className="font-semibold text-[#0b1020] truncate mt-0.5">
+                        {s.label}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete "${s.label}"?`)) removeSession(s.id);
+                      }}
+                      className="text-gray-300 hover:text-red-500 p-1 -m-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Delete session"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold vo360-gradient-text">
+                      {s.rawLeads.length}
+                    </span>
+                    <span className="text-xs text-gray-500">leads</span>
+                  </div>
+
+                  {scored.length > 0 ? (
+                    <div className="mt-4 flex gap-1.5 text-[11px] font-medium">
+                      <span className="flex-1 text-center px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100">
+                        {high} high
+                      </span>
+                      <span className="flex-1 text-center px-2 py-1 rounded-md bg-yellow-50 text-yellow-700 border border-yellow-100">
+                        {medium} med
+                      </span>
+                      <span className="flex-1 text-center px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-100">
+                        {low} low
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-4 text-[11px] text-gray-400 italic">
+                      Not yet scored
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex items-center text-xs font-medium text-[#1e2a78] group-hover:text-[#d633a0] transition-colors">
+                    Open session
+                    <svg className="w-3.5 h-3.5 ml-1 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </div>
   );

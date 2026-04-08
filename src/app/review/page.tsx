@@ -4,8 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import LeadTable from "@/components/lead-table";
-import type { Lead, ScoredLead } from "@/lib/types";
+import type { Lead, ScoredLead, LeadScore, ScoreBreakdown } from "@/lib/types";
 import { v4 as uuidv4 } from "uuid";
+import {
+  fingerprintLeads,
+  findSessionByFingerprint,
+  upsertSession,
+} from "@/lib/history";
+import {
+  loadTemplates,
+  upsertTemplate,
+  deleteTemplate,
+  type MessageTemplate,
+} from "@/lib/templates";
 
 type PageState =
   | { kind: "loading"; message: string }
@@ -17,12 +28,88 @@ interface SummaryData {
   hiddenGems: Array<{ phone: string; reason: string }>;
 }
 
+function summarizeBreakdown(b: ScoreBreakdown, bucket: string): string {
+  const parts: Array<[string, number, number]> = [
+    ["financial", b.financial.score, b.financial.max],
+    ["condition", b.condition.score, b.condition.max],
+    ["timing", b.timing.score, b.timing.max],
+    ["owner", b.owner.score, b.owner.max],
+    ["contact", b.contact.score, b.contact.max],
+  ];
+  const top = parts
+    .map(([label, s, m]) => ({ label, pct: m > 0 ? s / m : 0 }))
+    .sort((a, z) => z.pct - a.pct)
+    .slice(0, 2)
+    .map((x) => x.label)
+    .join(" + ");
+  return `${bucket} · strong ${top}`;
+}
+
 export default function ReviewPage() {
   const router = useRouter();
   const [state, setState] = useState<PageState>({ kind: "loading", message: "Scoring leads..." });
   const [guidelines, setGuidelines] = useState("");
   const [link1, setLink1] = useState("");
   const [link2, setLink2] = useState("");
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>("");
+
+  useEffect(() => {
+    const tpls = loadTemplates();
+    setTemplates(tpls);
+    // Auto-load first template on first mount
+    if (tpls.length > 0 && !activeTemplateId) {
+      const t = tpls[0];
+      setActiveTemplateId(t.id);
+      setGuidelines(t.guidelines);
+      setLink1(t.link1);
+      setLink2(t.link2);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyTemplate(id: string) {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setActiveTemplateId(id);
+    setGuidelines(t.guidelines);
+    setLink1(t.link1);
+    setLink2(t.link2);
+  }
+
+  function handleSaveTemplate() {
+    const name = prompt("Template name:", "");
+    if (!name || !name.trim()) return;
+    const t: MessageTemplate = {
+      id: uuidv4(),
+      name: name.trim(),
+      guidelines,
+      link1,
+      link2,
+      createdAt: new Date().toISOString(),
+    };
+    upsertTemplate(t);
+    setTemplates(loadTemplates());
+    setActiveTemplateId(t.id);
+  }
+
+  function handleUpdateTemplate() {
+    const t = templates.find((x) => x.id === activeTemplateId);
+    if (!t) return;
+    const updated: MessageTemplate = { ...t, guidelines, link1, link2 };
+    upsertTemplate(updated);
+    setTemplates(loadTemplates());
+  }
+
+  function handleDeleteTemplate() {
+    const t = templates.find((x) => x.id === activeTemplateId);
+    if (!t || t.builtIn) return;
+    if (!confirm(`Delete template "${t.name}"?`)) return;
+    deleteTemplate(t.id);
+    const remaining = loadTemplates();
+    setTemplates(remaining);
+    if (remaining.length > 0) applyTemplate(remaining[0].id);
+  }
   const [regenerating, setRegenerating] = useState(false);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const rawLeadsRef = useRef<Lead[]>([]);
@@ -47,9 +134,46 @@ export default function ReviewPage() {
     }
 
     rawLeadsRef.current = leads;
+
+    // Try cached session by fingerprint
+    const fp = fingerprintLeads(leads);
+    const existing = findSessionByFingerprint(fp);
+    if (existing && existing.scoredLeads && existing.scoredLeads.length > 0) {
+      setState({ kind: "ready", leads: existing.scoredLeads });
+      if (existing.summary) setSummary(existing.summary);
+      return;
+    }
+
     runScoringAndMessages(leads, "", "", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Persist whenever ready state changes
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+    const fp = fingerprintLeads(rawLeadsRef.current);
+    const existing = findSessionByFingerprint(fp);
+    upsertSession({
+      id: existing?.id ?? uuidv4(),
+      label:
+        existing?.label ??
+        `Upload ${new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })} · ${rawLeadsRef.current.length} leads`,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      fingerprint: fp,
+      rawLeads: rawLeadsRef.current,
+      scoredLeads: state.leads,
+      summary: summary ?? undefined,
+    });
+  }, [state, summary]);
+
+  function handleRescore() {
+    if (rawLeadsRef.current.length === 0) return;
+    setSummary(null);
+    runScoringAndMessages(rawLeadsRef.current, guidelines, link1, link2);
+  }
 
   async function runScoringAndMessages(leads: Lead[], currentGuidelines: string, currentLink1: string, currentLink2: string) {
     setState({ kind: "loading", message: `Scoring ${leads.length} leads with AI...` });
@@ -67,19 +191,26 @@ export default function ReviewPage() {
       }
       const scoreData = await scoreRes.json();
 
-      scored = leads.map((lead) => {
-        const s = (scoreData.scores as Array<{ phone: string; score: number; reason: string }>)
-          ?.find((sc) => sc.phone === lead.phone) ?? { score: 5, reason: "" };
-        return {
-          ...lead,
-          id: uuidv4(),
-          score: s.score,
-          scoreReason: s.reason,
-          message: "",
-          selected: s.score >= 5,
-          status: "new" as const,
-        };
-      });
+      const scores = (scoreData.scores as LeadScore[]) ?? [];
+      scored = leads
+        .map((lead, i): ScoredLead | null => {
+          const s = scores[i];
+          if (!s) return null;
+          if (s.bucket === "DISCARD") return null;
+          const reason = summarizeBreakdown(s.breakdown, s.bucket);
+          return {
+            ...lead,
+            id: uuidv4(),
+            score: s.total,
+            bucket: s.bucket,
+            breakdown: s.breakdown,
+            scoreReason: reason,
+            message: "",
+            selected: s.bucket === "HIGH" || s.bucket === "MEDIUM",
+            status: "new" as const,
+          };
+        })
+        .filter((l): l is ScoredLead => l !== null);
       scored.sort((a, b) => b.score - a.score);
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : "Scoring failed" });
@@ -146,9 +277,9 @@ export default function ReviewPage() {
   }
 
   function getScoreDistribution(leads: ScoredLead[]) {
-    const high = leads.filter((l) => l.score >= 7).length;
-    const medium = leads.filter((l) => l.score >= 4 && l.score < 7).length;
-    const low = leads.filter((l) => l.score < 4).length;
+    const high = leads.filter((l) => l.bucket === "HIGH").length;
+    const medium = leads.filter((l) => l.bucket === "MEDIUM").length;
+    const low = leads.filter((l) => l.bucket === "LOW").length;
     return { high, medium, low };
   }
 
@@ -308,56 +439,121 @@ export default function ReviewPage() {
       {/* Ready */}
       {state.kind === "ready" && (
         <>
-          {/* Summary Panel */}
+          {/* Intelligence Report — editorial layout */}
           {(() => {
             const dist = getScoreDistribution(state.leads);
+            const total = state.leads.length || 1;
+            const pct = (n: number) => Math.round((n / total) * 100);
             return (
-              <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
-                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-                  Scoring Summary
-                </h2>
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div className="text-center p-3 rounded-lg bg-green-50 border border-green-100">
-                    <div className="text-2xl font-bold text-green-700">{dist.high}</div>
-                    <div className="text-xs text-green-600 font-medium mt-1">HIGH (7-10)</div>
+              <article className="relative overflow-hidden bg-white border border-gray-200 rounded-2xl mb-6 shadow-[0_20px_60px_-40px_rgba(30,42,120,0.35)]">
+                {/* Masthead */}
+                <header className="relative bg-[#0b1020] px-5 md:px-6 py-3 overflow-hidden">
+                  <div className="absolute inset-0 vo360-gradient-animated opacity-20" />
+                  <div className="absolute inset-x-0 bottom-0 h-px vo360-gradient-bg" />
+                  <div className="relative flex items-center justify-between">
+                    <div className="flex items-baseline gap-3">
+                      <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-semibold">
+                        Intelligence Report
+                      </div>
+                      <span className="text-white/20">·</span>
+                      <span className="italic text-sm text-white/80">scoreboard</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-bold vo360-gradient-text">{total}</span>
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-white/40 ml-1.5">leads</span>
+                    </div>
                   </div>
-                  <div className="text-center p-3 rounded-lg bg-yellow-50 border border-yellow-100">
-                    <div className="text-2xl font-bold text-yellow-700">{dist.medium}</div>
-                    <div className="text-xs text-yellow-600 font-medium mt-1">MEDIUM (4-6)</div>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-red-50 border border-red-100">
-                    <div className="text-2xl font-bold text-red-700">{dist.low}</div>
-                    <div className="text-xs text-red-600 font-medium mt-1">LOW (1-3)</div>
-                  </div>
+                </header>
+
+                {/* Stat tiles */}
+                <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+                  {[
+                    { label: "High", range: "70–100", n: dist.high, color: "#15803d", bar: "from-green-400 to-emerald-600" },
+                    { label: "Medium", range: "40–69", n: dist.medium, color: "#a16207", bar: "from-amber-400 to-orange-500" },
+                    { label: "Low", range: "0–39", n: dist.low, color: "#b91c1c", bar: "from-rose-400 to-red-600" },
+                  ].map((tier) => (
+                    <div key={tier.label} className="px-4 md:px-5 py-4 relative">
+                      <div className="flex items-baseline justify-between">
+                        <div className="text-[9px] uppercase tracking-[0.2em] font-bold" style={{ color: tier.color }}>
+                          {tier.label}
+                        </div>
+                        <div className="text-[9px] text-gray-400 tabular-nums">{tier.range}</div>
+                      </div>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <div className="text-3xl font-light tracking-tight tabular-nums" style={{ color: tier.color }}>
+                          {tier.n}
+                        </div>
+                        <div className="text-[10px] text-gray-400 tabular-nums">{pct(tier.n)}%</div>
+                      </div>
+                      <div className="mt-2 h-[3px] w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className={`h-full bg-gradient-to-r ${tier.bar} rounded-full transition-all duration-700`}
+                          style={{ width: `${pct(tier.n)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {summary ? (
                   <>
-                    <div className="mb-4">
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        AI Analysis
+                    {/* Editorial note */}
+                    <div className="px-5 md:px-6 py-5 flex gap-4">
+                      <div className="shrink-0 flex flex-col items-start gap-1 pr-4 border-r border-gray-100">
+                        <div className="text-[9px] uppercase tracking-[0.22em] font-bold text-[#1e2a78]">
+                          Analyst
+                        </div>
+                        <div className="w-6 h-px vo360-gradient-bg" />
+                        <div className="italic text-[10px] text-gray-400">note</div>
                       </div>
-                      <p className="text-sm text-gray-700 leading-relaxed">{summary.summary}</p>
+                      <p className="text-[15px] md:text-base text-[#0b1020] leading-relaxed">
+                        {summary.summary}
+                      </p>
                     </div>
 
+                    {/* Hidden Gems */}
                     {summary.hiddenGems.length > 0 && (
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                          💎 Hidden Gems (lower-scored leads worth a look)
+                      <div className="border-t border-gray-100 px-5 md:px-6 py-5 bg-gradient-to-b from-[#fff9fc] to-white">
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full vo360-gradient-bg text-white text-[10px]">
+                            ◆
+                          </span>
+                          <div className="text-[9px] uppercase tracking-[0.22em] font-bold text-[#1e2a78]">
+                            Hidden Gems
+                          </div>
+                          <div className="italic text-[10px] text-gray-400">
+                            worth a second look
+                          </div>
+                          <div className="ml-auto text-[10px] text-gray-400">
+                            {summary.hiddenGems.length}
+                          </div>
                         </div>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                           {summary.hiddenGems.map((gem) => {
                             const lead = state.leads.find((l) => l.phone === gem.phone);
                             if (!lead) return null;
                             return (
                               <div
                                 key={gem.phone}
-                                className="text-sm border-l-2 border-blue-300 pl-3 py-1"
+                                className="group relative bg-white border border-gray-200 rounded-xl p-4 hover:border-[#d633a0]/40 hover:shadow-[0_15px_40px_-25px_rgba(214,51,160,0.5)] transition-all"
                               >
-                                <div className="font-medium text-gray-800">
-                                  {lead.firstName} {lead.lastName} · Score {lead.score} · {lead.propertyAddress}
+                                <div className="absolute top-0 left-4 right-4 h-px vo360-gradient-bg opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="flex items-start gap-3">
+                                  <div className="shrink-0 w-11 h-11 rounded-xl border-2 border-[#1e2a78]/15 flex items-center justify-center font-bold text-lg text-[#1e2a78] bg-white">
+                                    {lead.score}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-semibold text-[#0b1020] text-sm truncate">
+                                      {lead.firstName} {lead.lastName}
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 truncate">
+                                      {lead.propertyAddress}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="text-gray-600 text-xs mt-0.5">{gem.reason}</div>
+                                <p className="mt-3 text-xs text-gray-600 leading-relaxed italic font-display">
+                                  &ldquo;{gem.reason}&rdquo;
+                                </p>
                               </div>
                             );
                           })}
@@ -366,14 +562,61 @@ export default function ReviewPage() {
                     )}
                   </>
                 ) : (
-                  <div className="text-sm text-gray-500 italic">Generating AI analysis...</div>
+                  <div className="px-6 md:px-10 py-12 flex items-center gap-3 text-gray-400">
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span className="italic text-sm">
+                      The analyst is reading your batch&hellip;
+                    </span>
+                  </div>
                 )}
-              </div>
+              </article>
             );
           })()}
 
           {/* Controls */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+            {/* Template picker */}
+            <div className="flex flex-wrap items-center gap-2 pb-4 mb-4 border-b border-gray-100">
+              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Template
+              </label>
+              <select
+                value={activeTemplateId}
+                onChange={(e) => applyTemplate(e.target.value)}
+                className="flex-1 min-w-[200px] text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              >
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.builtIn ? "★ " : ""}{t.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleUpdateTemplate}
+                disabled={!activeTemplateId}
+                className="text-xs font-medium px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Save current guidelines + links to this template"
+              >
+                Update
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                className="text-xs font-medium px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                + Save as new
+              </button>
+              <button
+                onClick={handleDeleteTemplate}
+                disabled={!activeTemplateId || templates.find((t) => t.id === activeTemplateId)?.builtIn}
+                className="text-xs font-medium px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Delete template"
+              >
+                Delete
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -414,6 +657,18 @@ export default function ReviewPage() {
                 </div>
               </div>
             </div>
+            <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleRescore}
+              disabled={regenerating}
+              className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50 text-gray-800 font-medium px-4 py-2.5 rounded-lg transition-colors"
+              title="Discard cached scores and re-run AI scoring from scratch"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+              </svg>
+              Re-score Leads
+            </button>
             <button
               onClick={handleRegenerate}
               disabled={regenerating}
@@ -436,6 +691,7 @@ export default function ReviewPage() {
                 </>
               )}
             </button>
+            </div>
           </div>
 
           {/* Lead Table */}
