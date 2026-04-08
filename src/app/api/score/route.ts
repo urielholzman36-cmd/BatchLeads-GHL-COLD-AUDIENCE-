@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scoreLeads } from "@/lib/claude-client";
+import { scoreLeads } from "@/lib/lead-scorer";
 import type { Lead } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -13,15 +13,6 @@ export async function POST(req: NextRequest) {
   }
 
   const leads: Lead[] = body.leads;
-
-  try {
-    const scores = await scoreLeads(leads);
-    return NextResponse.json({ scores });
-  } catch (err) {
-    console.error("[score] AI error:", err);
-    return NextResponse.json(
-      { error: "AI scoring failed", details: String(err) },
-      { status: 500 }
-    );
-  }
+  const scores = scoreLeads(leads);
+  return NextResponse.json({ scores });
 }
