@@ -181,6 +181,21 @@ function scoreTiming(lead: Lead): ScoreBreakdown["timing"] {
   return { score: recentPurchase + recentRefi, max: 20, details: { recentPurchase, recentRefi } };
 }
 
+function scoreOwner(lead: Lead): ScoreBreakdown["owner"] {
+  let tenure = 0;
+  const sale = parseDate(lead.lastSaleDate);
+  if (sale) {
+    const years = daysBetween(NOW(), sale) / 365.25;
+    if (years >= 10) tenure = 8;
+    else if (years >= 5) tenure = 5;
+    else if (years >= 3) tenure = 3;
+    else tenure = 0;
+  }
+  const ownerOccupied = lead.ownerOccupied === true ? 4 : 0;
+  const coOwner = lead.coOwnerFirstName.trim() !== "" ? 3 : 0;
+  return { score: tenure + ownerOccupied + coOwner, max: 15, details: { tenure, ownerOccupied, coOwner } };
+}
+
 export function scoreLead(lead: Lead): LeadScore {
   const dq = checkDiscard(lead);
   if (dq) return discard(dq.reason, dq.cleaned);
@@ -190,8 +205,9 @@ export function scoreLead(lead: Lead): LeadScore {
   breakdown.financial = scoreFinancial(lead);
   breakdown.condition = scoreCondition(lead);
   breakdown.timing = scoreTiming(lead);
+  breakdown.owner = scoreOwner(lead);
 
-  const total = breakdown.financial.score + breakdown.condition.score + breakdown.timing.score;
+  const total = breakdown.financial.score + breakdown.condition.score + breakdown.timing.score + breakdown.owner.score;
   return { total, bucket: bucketFor(total), breakdown, cleanedPhones };
 }
 

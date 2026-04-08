@@ -245,3 +245,31 @@ describe("scoreLead — Timing (20 pts)", () => {
     expect(r.breakdown.timing.details.recentRefi).toBe(pts);
   });
 });
+
+describe("scoreLead — Owner Stability (15 pts)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-08"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ["01-01-2010", 8], // 16 yrs
+    ["01-01-2018", 5], // 8 yrs
+    ["01-01-2022", 3], // 4 yrs
+    ["01-01-2025", 0], // 1 yr
+  ])("tenure %s → %i pts", (date, pts) => {
+    const r = scoreLead(makeLead({ lastSaleDate: date }));
+    expect(r.breakdown.owner.details.tenure).toBe(pts);
+  });
+
+  it("owner-occupied = 4 pts", () => {
+    expect(scoreLead(makeLead({ ownerOccupied: true })).breakdown.owner.details.ownerOccupied).toBe(4);
+    expect(scoreLead(makeLead({ ownerOccupied: false })).breakdown.owner.details.ownerOccupied).toBe(0);
+  });
+
+  it("co-owner present = 3 pts", () => {
+    expect(scoreLead(makeLead({ coOwnerFirstName: "Spouse" })).breakdown.owner.details.coOwner).toBe(3);
+    expect(scoreLead(makeLead({ coOwnerFirstName: "" })).breakdown.owner.details.coOwner).toBe(0);
+  });
+});
