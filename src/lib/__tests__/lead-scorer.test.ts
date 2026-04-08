@@ -175,3 +175,37 @@ describe("scoreLead — Financial Capacity (30 pts)", () => {
     expect(r.breakdown.financial.score).toBe(18 + 7 + 5);
   });
 });
+
+describe("scoreLead — Property Condition (25 pts)", () => {
+  it.each([
+    [1955, 12],
+    [1970, 10],
+    [1990, 6],
+    [2005, 2],
+    [2020, 0],
+  ])("year built %i → %i pts", (yr, pts) => {
+    const r = scoreLead(makeLead({ yearBuilt: yr }));
+    expect(r.breakdown.condition.details.yearBuilt).toBe(pts);
+  });
+
+  it.each([
+    [200000, 800000, 8],   // 25% ratio
+    [500000, 800000, 5],   // 62.5%
+    [640000, 800000, 2],   // 80%
+    [760000, 800000, 0],   // 95%
+  ])("assessed %i / estimated %i → %i pts", (a, e, pts) => {
+    const r = scoreLead(makeLead({ assessedValue: a, estimatedValue: e }));
+    expect(r.breakdown.condition.details.assessedGap).toBe(pts);
+  });
+
+  it.each([
+    [2200, 5],
+    [1300, 3],
+    [4000, 3],
+    [800, 1],
+    [6000, 1],
+  ])("sqft %i → %i pts", (s, pts) => {
+    const r = scoreLead(makeLead({ sqft: s }));
+    expect(r.breakdown.condition.details.size).toBe(pts);
+  });
+});

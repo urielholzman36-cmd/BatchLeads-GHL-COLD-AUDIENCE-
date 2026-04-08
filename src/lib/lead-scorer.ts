@@ -120,6 +120,36 @@ function scoreFinancial(lead: Lead): ScoreBreakdown["financial"] {
   };
 }
 
+function scoreCondition(lead: Lead): ScoreBreakdown["condition"] {
+  let yearBuilt = 0;
+  if (lead.yearBuilt !== null) {
+    if (lead.yearBuilt < 1960) yearBuilt = 12;
+    else if (lead.yearBuilt < 1980) yearBuilt = 10;
+    else if (lead.yearBuilt < 2000) yearBuilt = 6;
+    else if (lead.yearBuilt < 2015) yearBuilt = 2;
+    else yearBuilt = 0;
+  }
+
+  let assessedGap = 0;
+  if (lead.assessedValue !== null && lead.estimatedValue !== null && lead.estimatedValue > 0) {
+    const ratio = lead.assessedValue / lead.estimatedValue;
+    if (ratio < 0.5) assessedGap = 8;
+    else if (ratio < 0.7) assessedGap = 5;
+    else if (ratio < 0.9) assessedGap = 2;
+    else assessedGap = 0;
+  }
+
+  let size = 1;
+  const s = lead.sqft;
+  if (s !== null) {
+    if (s >= 1500 && s <= 3500) size = 5;
+    else if ((s >= 1200 && s < 1500) || (s > 3500 && s <= 5000)) size = 3;
+    else size = 1;
+  }
+
+  return { score: yearBuilt + assessedGap + size, max: 25, details: { yearBuilt, assessedGap, size } };
+}
+
 export function scoreLead(lead: Lead): LeadScore {
   const dq = checkDiscard(lead);
   if (dq) return discard(dq.reason, dq.cleaned);
@@ -127,8 +157,9 @@ export function scoreLead(lead: Lead): LeadScore {
   const cleanedPhones = lead.phones.filter((p) => !p.dnc);
   const breakdown = emptyBreakdown();
   breakdown.financial = scoreFinancial(lead);
+  breakdown.condition = scoreCondition(lead);
 
-  const total = breakdown.financial.score; // other categories added in later tasks
+  const total = breakdown.financial.score + breakdown.condition.score;
   return { total, bucket: bucketFor(total), breakdown, cleanedPhones };
 }
 
