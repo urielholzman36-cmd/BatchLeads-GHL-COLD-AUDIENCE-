@@ -41,10 +41,10 @@ describe("parseCSV", () => {
     ].join("\n");
 
     const leads = parseCSV(csv);
-    // First lead has DNC=Yes, should be filtered out
-    expect(leads).toHaveLength(1);
+    // Parser no longer filters DNC at parse time — scorer handles it.
+    expect(leads).toHaveLength(2);
 
-    const lead = leads[0];
+    const lead = leads[1];
     expect(lead.phone).toBe("6193334444");
     expect(lead.propertyAddress).toBe("12533 Shropshire Ln");
     expect(lead.city).toBe("San Diego");
@@ -55,7 +55,7 @@ describe("parseCSV", () => {
     expect(lead.equityPercent).toBe(100);
   });
 
-  it("filters out litigator leads", () => {
+  it("parses litigator flag (does not filter at parse time)", () => {
     const csv = [
       "First Name,Last Name,Phone 1,Litigator,Property Address,Property City,Property State,Property Zip",
       "Bad,Actor,5551112222,Yes,123 Oak St,Dallas,TX,75001",
@@ -63,8 +63,9 @@ describe("parseCSV", () => {
     ].join("\n");
 
     const leads = parseCSV(csv);
-    expect(leads).toHaveLength(1);
-    expect(leads[0].firstName).toBe("Good");
+    expect(leads).toHaveLength(2);
+    expect(leads[0].litigator).toBe(true);
+    expect(leads[1].litigator).toBe(false);
   });
 
   it("skips rows without phone numbers", () => {
@@ -93,5 +94,56 @@ describe("parseCSV", () => {
     const leads = parseCSV(csv);
     expect(leads[0].estimatedValue).toBe(450000);
     expect(leads[0].lastSalePrice).toBe(320000);
+  });
+
+  it("populates the new Lead fields from BatchLeads columns", () => {
+    const csv = [
+      "First Name,Last Name,Phone 1,Phone 1 DNC,Phone 1 TYPE,Phone 2,Phone 2 DNC,Phone 2 TYPE,Property Address,Property City,Property State,Property Zip,Mailing Address,Property Type Detail,Bedroom Count,Bathroom Count,Total Building Area Square Feet,Year Built,Estimated Value,Total Assessed Value,Ltv Current Estimated Combined,Equity Current Estimated Balance,Owner Occupied,Last Sale Date,Last Sale Price,Loan Recording Date,Owner 2 First Name,Is Vacant,Opt-Out,Litigator,Foreclosure Status,Mls Status,Created Date,List Count",
+      "Jane,Doe,5551111111,No,Mobile,5552222222,Yes,Landline,123 Main St,Dallas,TX,75001,123 Main St,Single Family,3,2,1800,1965,800000,400000,30,560000,Yes,03-01-2020,500000,03-15-2024,John,No,No,No,,Sold,03-20-2026,1",
+    ].join("\n");
+
+    const leads = parseCSV(csv);
+    expect(leads).toHaveLength(1);
+    const lead = leads[0];
+
+    expect(lead.phones).toHaveLength(2);
+    expect(lead.phones[0]).toEqual({ number: "5551111111", type: "Mobile", dnc: false });
+    expect(lead.phones[1]).toEqual({ number: "5552222222", type: "Landline", dnc: true });
+    expect(lead.phone).toBe("5551111111");
+
+    expect(lead.mailingAddress).toBe("123 Main St");
+    expect(lead.assessedValue).toBe(400000);
+    expect(lead.equityDollar).toBe(560000);
+    expect(lead.ltvPercent).toBe(30);
+    expect(lead.equityPercent).toBe(70); // 100 - 30
+    expect(lead.loanRecordingDate).toBe("03-15-2024");
+    expect(lead.coOwnerFirstName).toBe("John");
+    expect(lead.isVacant).toBe(false);
+    expect(lead.optOut).toBe(false);
+    expect(lead.foreclosureStatus).toBe("");
+    expect(lead.mlsStatus).toBe("Sold");
+    expect(lead.createdDate).toBe("03-20-2026");
+    expect(lead.listCount).toBe(1);
+  });
+
+  it("does NOT kill leads at parse time when Phone 1 is DNC (scorer handles it now)", () => {
+    const csv = [
+      "First Name,Last Name,Phone 1,Phone 1 DNC,Phone 1 TYPE,Phone 2,Phone 2 DNC,Phone 2 TYPE,Property Address,Property City,Property State,Property Zip,Property Type Detail",
+      "Bob,Smith,5550000001,Yes,Mobile,5550000002,No,Mobile,1 Elm,Austin,TX,73301,Single Family",
+    ].join("\n");
+
+    const leads = parseCSV(csv);
+    expect(leads).toHaveLength(1);
+    expect(leads[0].phones).toHaveLength(2);
+    expect(leads[0].phones[0].dnc).toBe(true);
+    expect(leads[0].phones[1].dnc).toBe(false);
+  });
+
+  it("still skips rows with no phone numbers at all", () => {
+    const csv = [
+      "First Name,Last Name,Phone 1,Property Address,Property City,Property State,Property Zip,Property Type Detail",
+      "NoPhone,Person,,1 Elm,Austin,TX,73301,Single Family",
+    ].join("\n");
+    expect(parseCSV(csv)).toHaveLength(0);
   });
 });
