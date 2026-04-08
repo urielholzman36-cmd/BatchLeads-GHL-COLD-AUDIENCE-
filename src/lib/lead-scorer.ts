@@ -196,6 +196,41 @@ function scoreOwner(lead: Lead): ScoreBreakdown["owner"] {
   return { score: tenure + ownerOccupied + coOwner, max: 15, details: { tenure, ownerOccupied, coOwner } };
 }
 
+function scoreContact(lead: Lead): ScoreBreakdown["contact"] {
+  const cleaned = lead.phones.filter((p) => !p.dnc);
+  const cleanMobiles = cleaned.filter((p) => p.type.toLowerCase() === "mobile");
+  const anyDnc = lead.phones.some((p) => p.dnc);
+
+  let phoneQuality = 0;
+  if (cleanMobiles.length >= 2) phoneQuality = 6;
+  else if (cleanMobiles.length === 1) phoneQuality = 4;
+  else if (cleaned.length > 0 && !anyDnc) phoneQuality = 2; // only landlines, all clean
+  else if (cleaned.length > 0) phoneQuality = 1;            // mixed
+
+  let freshness = 0;
+  const created = parseDate(lead.createdDate);
+  if (created) {
+    const days = daysBetween(NOW(), created);
+    if (days < 30) freshness = 3;
+    else if (days < 90) freshness = 2;
+    else freshness = 0;
+  }
+
+  let listCountAdj = 0;
+  const lc = lead.listCount;
+  if (lc !== null) {
+    if (lc === 1) listCountAdj = 1;
+    else if (lc >= 5) listCountAdj = -2;
+    else listCountAdj = 0;
+  }
+
+  return {
+    score: phoneQuality + freshness + listCountAdj,
+    max: 10,
+    details: { phoneQuality, freshness, listCountAdj },
+  };
+}
+
 export function scoreLead(lead: Lead): LeadScore {
   const dq = checkDiscard(lead);
   if (dq) return discard(dq.reason, dq.cleaned);
@@ -206,8 +241,9 @@ export function scoreLead(lead: Lead): LeadScore {
   breakdown.condition = scoreCondition(lead);
   breakdown.timing = scoreTiming(lead);
   breakdown.owner = scoreOwner(lead);
+  breakdown.contact = scoreContact(lead);
 
-  const total = breakdown.financial.score + breakdown.condition.score + breakdown.timing.score + breakdown.owner.score;
+  const total = breakdown.financial.score + breakdown.condition.score + breakdown.timing.score + breakdown.owner.score + breakdown.contact.score;
   return { total, bucket: bucketFor(total), breakdown, cleanedPhones };
 }
 

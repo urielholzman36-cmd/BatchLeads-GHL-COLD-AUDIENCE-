@@ -273,3 +273,72 @@ describe("scoreLead — Owner Stability (15 pts)", () => {
     expect(scoreLead(makeLead({ coOwnerFirstName: "" })).breakdown.owner.details.coOwner).toBe(0);
   });
 });
+
+describe("scoreLead — Contactability (10 pts)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-08"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("2+ clean mobiles → 6 pts", () => {
+    const r = scoreLead(
+      makeLead({
+        phones: [
+          { number: "1", type: "Mobile", dnc: false },
+          { number: "2", type: "Mobile", dnc: false },
+        ],
+      })
+    );
+    expect(r.breakdown.contact.details.phoneQuality).toBe(6);
+  });
+
+  it("1 clean mobile → 4 pts", () => {
+    const r = scoreLead(
+      makeLead({ phones: [{ number: "1", type: "Mobile", dnc: false }] })
+    );
+    expect(r.breakdown.contact.details.phoneQuality).toBe(4);
+  });
+
+  it("only landlines (clean) → 2 pts", () => {
+    const r = scoreLead(
+      makeLead({
+        phones: [
+          { number: "1", type: "Landline", dnc: false },
+          { number: "2", type: "Landline", dnc: false },
+        ],
+      })
+    );
+    expect(r.breakdown.contact.details.phoneQuality).toBe(2);
+  });
+
+  it("mixed landline+DNC mobile → 1 pt", () => {
+    const r = scoreLead(
+      makeLead({
+        phones: [
+          { number: "1", type: "Mobile", dnc: true },
+          { number: "2", type: "Landline", dnc: false },
+        ],
+      })
+    );
+    expect(r.breakdown.contact.details.phoneQuality).toBe(1);
+  });
+
+  it.each([
+    ["03-20-2026", 3], // ~19 days
+    ["02-01-2026", 2], // ~67 days
+    ["10-01-2025", 0], // 6+ months
+  ])("freshness %s → %i pts", (date, pts) => {
+    const r = scoreLead(makeLead({ createdDate: date }));
+    expect(r.breakdown.contact.details.freshness).toBe(pts);
+  });
+
+  it.each([
+    [1, 1],
+    [3, 0],
+    [7, -2],
+  ])("list count %i → %i pts", (lc, pts) => {
+    const r = scoreLead(makeLead({ listCount: lc }));
+    expect(r.breakdown.contact.details.listCountAdj).toBe(pts);
+  });
+});
