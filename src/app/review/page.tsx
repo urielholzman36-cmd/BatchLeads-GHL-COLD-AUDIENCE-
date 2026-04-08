@@ -468,9 +468,9 @@ export default function ReviewPage() {
                 {/* Stat tiles */}
                 <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
                   {[
-                    { label: "High", range: "70–100", n: dist.high, color: "#15803d", bar: "from-green-400 to-emerald-600" },
-                    { label: "Medium", range: "40–69", n: dist.medium, color: "#a16207", bar: "from-amber-400 to-orange-500" },
-                    { label: "Low", range: "0–39", n: dist.low, color: "#b91c1c", bar: "from-rose-400 to-red-600" },
+                    { label: "High", range: "70+", n: dist.high, color: "#15803d", bar: "from-green-400 to-emerald-600" },
+                    { label: "Medium", range: "50–69", n: dist.medium, color: "#a16207", bar: "from-amber-400 to-orange-500" },
+                    { label: "Low", range: "0–49", n: dist.low, color: "#b91c1c", bar: "from-rose-400 to-red-600" },
                   ].map((tier) => (
                     <div key={tier.label} className="px-4 md:px-5 py-4 relative">
                       <div className="flex items-baseline justify-between">

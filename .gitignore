@@ -1,5 +1,13 @@
 .env
+.env.local
+.env.*.local
 node_modules/
 .next/
 data/
 pre-flight-logs/
+.vercel
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# clerk configuration (can include secrets)
+/.clerk/

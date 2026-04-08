@@ -78,15 +78,18 @@ main {
   box-shadow: var(--shadow-card-hover);
 }
 
-/* Brand gradient utilities */
+/* Brand gradient utilities — inline gradient (don't depend on :root var, Tailwind v4 sometimes drops it) */
 .brand-gradient-bg {
-  background: var(--brand-gradient);
+  background-color: #DB2777; /* solid fallback so text is never invisible */
+  background-image: linear-gradient(135deg, #1E1B4B 0%, #DB2777 50%, #F97316 100%) !important;
 }
 
 .brand-gradient-text {
-  background: var(--brand-gradient);
+  background-color: #DB2777;
+  background-image: linear-gradient(135deg, #1E1B4B 0%, #DB2777 50%, #F97316 100%) !important;
   -webkit-background-clip: text;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
 }
 
@@ -155,12 +158,17 @@ main {
   0% { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
 }
-/* Legacy vo360-gradient-* aliases (map to brand-gradient-*) */
-.vo360-gradient-bg { background: var(--brand-gradient); }
+/* Legacy vo360-gradient-* aliases — inline gradient with fallback */
+.vo360-gradient-bg {
+  background-color: #DB2777;
+  background-image: linear-gradient(135deg, #1E1B4B 0%, #DB2777 50%, #F97316 100%) !important;
+}
 .vo360-gradient-text {
-  background: var(--brand-gradient);
+  background-color: #DB2777;
+  background-image: linear-gradient(135deg, #1E1B4B 0%, #DB2777 50%, #F97316 100%) !important;
   -webkit-background-clip: text;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
 }
 .vo360-gradient-animated {

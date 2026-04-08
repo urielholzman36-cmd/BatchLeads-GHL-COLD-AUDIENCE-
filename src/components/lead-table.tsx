@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ScoredLead, Bucket, ScoreBreakdown } from "@/lib/types";
+import type { ScoredLead, Bucket } from "@/lib/types";
+import BucketBadge from "@/components/bucket-badge";
 
 interface LeadTableProps {
   leads: ScoredLead[];
@@ -9,39 +10,7 @@ interface LeadTableProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onUpdateMessage: (id: string, message: string) => void;
-}
-
-function BucketBadge({
-  bucket,
-  total,
-  breakdown,
-}: {
-  bucket: Bucket;
-  total: number;
-  breakdown: ScoreBreakdown;
-}) {
-  const styles: Record<Bucket, string> = {
-    HIGH: "bg-green-100 text-green-700",
-    MEDIUM: "bg-yellow-100 text-yellow-700",
-    LOW: "bg-gray-100 text-gray-600",
-    DISCARD: "bg-red-100 text-red-700",
-  };
-  const tooltip = [
-    `Total: ${total}/100`,
-    `Financial: ${breakdown.financial.score}/30`,
-    `Condition: ${breakdown.condition.score}/25`,
-    `Timing: ${breakdown.timing.score}/20`,
-    `Owner: ${breakdown.owner.score}/15`,
-    `Contact: ${breakdown.contact.score}/10`,
-  ].join("\n");
-  return (
-    <span
-      title={tooltip}
-      className={`inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-bold ${styles[bucket]}`}
-    >
-      {bucket} · {total}
-    </span>
-  );
+  filter?: Bucket | "ALL";
 }
 
 export default function LeadTable({
@@ -50,37 +19,87 @@ export default function LeadTable({
   onSelectAll,
   onDeselectAll,
   onUpdateMessage,
+  filter = "ALL",
 }: LeadTableProps) {
-  const selectedCount = leads.filter((l) => l.selected).length;
+  const [search, setSearch] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
+
+  const bucketFiltered = filter === "ALL" ? leads : leads.filter((l) => l.bucket === filter);
+  const q = search.trim().toLowerCase();
+  const visibleLeads = q
+    ? bucketFiltered.filter((l) => {
+        const name = `${l.firstName} ${l.lastName}`.toLowerCase();
+        const addr = `${l.propertyAddress} ${l.city} ${l.state} ${l.zip}`.toLowerCase();
+        return (
+          name.includes(q) ||
+          addr.includes(q) ||
+          (l.phone ?? "").toLowerCase().includes(q)
+        );
+      })
+    : bucketFiltered;
+
+  const selectedCount = visibleLeads.filter((l) => l.selected).length;
   const previewLead = previewId ? leads.find((l) => l.id === previewId) : null;
 
   if (leads.length === 0) {
-    return <p className="text-gray-500 py-8 text-center">No leads to display.</p>;
+    return <p className="text-slate-500 py-8 text-center">No leads to display.</p>;
   }
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-3">
-        <button
-          onClick={onSelectAll}
-          className="text-sm text-blue-600 hover:underline"
-        >
-          Select All
-        </button>
-        <button
-          onClick={onDeselectAll}
-          className="text-sm text-gray-500 hover:underline"
-        >
-          Deselect All
-        </button>
-        <span className="text-sm text-gray-600 ml-auto">
-          {selectedCount} of {leads.length} selected
-        </span>
+      <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
+        <div className="relative flex-1 min-w-0 md:max-w-sm">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+          </svg>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, phone, or address…"
+            className="w-full pl-9 pr-9 py-2 text-sm rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300"
+            aria-label="Search leads"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              aria-label="Clear search"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-4 md:ml-auto">
+          <button
+            onClick={onSelectAll}
+            className="text-sm font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
+          >
+            Select All
+          </button>
+          <button
+            onClick={onDeselectAll}
+            className="text-sm font-medium text-slate-500 hover:text-slate-700 cursor-pointer"
+          >
+            Deselect All
+          </button>
+          <span className="text-sm text-slate-500 font-mono whitespace-nowrap">
+            {selectedCount} of {visibleLeads.length} selected
+          </span>
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200" style={{ transform: "rotateX(180deg)" }}>
-        <table className="min-w-full text-sm" style={{ transform: "rotateX(180deg)" }}>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-3 py-3 text-left w-8"></th>
@@ -95,8 +114,8 @@ export default function LeadTable({
               <th className="px-3 py-3 text-left font-semibold text-gray-600 w-[260px]">SMS Message</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
-            {leads.map((lead) => (
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {visibleLeads.map((lead) => (
               <tr
                 key={lead.id}
                 className={lead.selected ? "bg-blue-50" : "hover:bg-gray-50"}
@@ -110,7 +129,7 @@ export default function LeadTable({
                   />
                 </td>
                 <td className="px-3 py-3">
-                  <BucketBadge bucket={lead.bucket} total={lead.score} breakdown={lead.breakdown} />
+                  <BucketBadge bucket={lead.bucket} total={lead.score} breakdown={lead.breakdown} size="sm" />
                 </td>
                 <td className="px-3 py-3 text-gray-600 max-w-[200px]">
                   <span className="line-clamp-2" title={lead.scoreReason}>

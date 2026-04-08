@@ -116,7 +116,7 @@ export default function UploadPage() {
               Cold leads, <span className="italic font-medium">warmed by</span> <span className="font-bold">intelligence.</span>
             </h1>
             <p className="text-white/80 mt-4 max-w-md text-sm leading-relaxed">
-              Upload a BatchLeads export. We dedupe, score every contact 1–10 with Claude, and draft personalized SMS — ready to fire through GoHighLevel.
+              Upload a BatchLeads export. We dedupe, score every contact 0–100 across 5 weighted categories, and draft personalized SMS — ready to fire through GoHighLevel.
             </p>
 
             <div className="mt-5 flex flex-wrap gap-5 text-xs text-white/80">

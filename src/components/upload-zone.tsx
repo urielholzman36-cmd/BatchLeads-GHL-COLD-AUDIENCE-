@@ -51,10 +51,10 @@ export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+        className={`relative flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-2xl cursor-pointer transition-all overflow-hidden group ${
           isDragging
-            ? "border-blue-500 bg-blue-50"
-            : "border-gray-300 bg-white hover:border-blue-400 hover:bg-gray-50"
+            ? "border-[#d633a0] bg-[#fff3fb] scale-[1.01]"
+            : "border-[#1e2a78]/20 bg-white/60 hover:border-[#d633a0]/60 hover:bg-white/90"
         }`}
       >
         {fileName ? (
@@ -67,13 +67,20 @@ export default function UploadZone({ onFileLoaded }: UploadZoneProps) {
           </>
         ) : (
           <>
-            <svg className="w-10 h-10 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <p className="text-sm font-medium text-gray-700">
-              {isDragging ? "Drop your file here" : "Drag & drop a CSV or Excel file"}
+            <div className="absolute inset-0 vo360-gradient-bg opacity-0 group-hover:opacity-[0.04] transition-opacity pointer-events-none" />
+            <div className="relative w-14 h-14 rounded-2xl vo360-gradient-bg p-[2px] mb-4 shadow-[0_10px_30px_-12px_rgba(214,51,160,0.5)]">
+              <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center">
+                <svg className="w-7 h-7 text-[#1e2a78]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-base font-semibold text-[#0b1020]">
+              {isDragging ? "Drop it like it's hot" : "Drag & drop your file"}
             </p>
-            <p className="text-xs text-gray-500 mt-1">or <span className="text-blue-600 underline">click to browse</span></p>
+            <p className="text-xs text-gray-500 mt-1">
+              or <span className="vo360-gradient-text font-semibold">click to browse</span> · CSV, XLSX
+            </p>
           </>
         )}
       </label>

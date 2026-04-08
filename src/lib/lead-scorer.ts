@@ -67,9 +67,12 @@ function checkDiscard(lead: Lead): { reason: string; cleaned: PhoneEntry[] } | n
   return null;
 }
 
+// Recalibrated 2026-04-08 after observing 96% HIGH on a pre-filtered BatchLeads list.
+// Pre-filtered lists have a high baseline; reserve HIGH for genuine grand-slams.
+// Spec sanity check: grand-slam profiles score 74-76 → must still bucket as HIGH.
 function bucketFor(total: number): Bucket {
-  if (total >= 55) return "HIGH";
-  if (total >= 35) return "MEDIUM";
+  if (total >= 70) return "HIGH";
+  if (total >= 50) return "MEDIUM";
   return "LOW";
 }
 
