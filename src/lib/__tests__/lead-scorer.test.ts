@@ -113,3 +113,65 @@ describe("scoreLead — DISCARD filter", () => {
     expect(r.cleanedPhones[0].number).toBe("5550000002");
   });
 });
+
+describe("scoreLead — Financial Capacity (30 pts)", () => {
+  it("scores LTV <30% as 18 pts", () => {
+    const r = scoreLead(makeLead({ ltvPercent: 25, equityDollar: 600000, estimatedValue: 800000 }));
+    expect(r.breakdown.financial.details.ltv).toBe(18);
+  });
+
+  it.each([
+    [20, 18],
+    [40, 14],
+    [60, 9],
+    [80, 4],
+    [90, 0],
+  ])("LTV %i%% → %i pts", (ltv, pts) => {
+    const r = scoreLead(makeLead({ ltvPercent: ltv }));
+    expect(r.breakdown.financial.details.ltv).toBe(pts);
+  });
+
+  it.each([
+    [200000, 7],
+    [100000, 4],
+    [50000, 1],
+    [10000, 0],
+  ])("absolute equity $%i → %i pts", (eq, pts) => {
+    const r = scoreLead(makeLead({ equityDollar: eq, lastSaleDate: "01-01-2010" }));
+    expect(r.breakdown.financial.details.equityAbs).toBe(pts);
+  });
+
+  it.each([
+    [1000000, 5],
+    [600000, 3],
+    [200000, 1],
+  ])("home value $%i → %i pts", (val, pts) => {
+    const r = scoreLead(makeLead({ estimatedValue: val }));
+    expect(r.breakdown.financial.details.homeValue).toBe(pts);
+  });
+
+  it("applies recent-mover relief: sale within 2 years awards 20 pts flat for ltv+equity", () => {
+    const r = scoreLead(
+      makeLead({
+        ltvPercent: 85,
+        equityDollar: 60000,
+        estimatedValue: 800000,
+        lastSaleDate: "03-01-2026", // recent
+      })
+    );
+    expect(r.breakdown.financial.details.recentMoverRelief).toBe(true);
+    expect(r.breakdown.financial.details.ltv).toBe(0);
+    expect(r.breakdown.financial.details.equityAbs).toBe(0);
+    expect(r.breakdown.financial.score).toBe(25); // 20 relief + 5 home value tier
+  });
+
+  it("financial total = ltv + equityAbs + homeValue when no relief", () => {
+    const r = scoreLead(
+      makeLead({
+        ltvPercent: 25, equityDollar: 600000, estimatedValue: 1000000,
+        lastSaleDate: "01-01-2010",
+      })
+    );
+    expect(r.breakdown.financial.score).toBe(18 + 7 + 5);
+  });
+});

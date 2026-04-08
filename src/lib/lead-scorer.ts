@@ -1,5 +1,25 @@
 import type { Lead, LeadScore, ScoreBreakdown, Bucket, PhoneEntry } from "./types";
 
+// Parse BatchLeads date strings (MM-DD-YYYY or YYYY-MM-DD). Returns null on failure.
+function parseDate(s: string): Date | null {
+  const t = s.trim();
+  if (!t) return null;
+  // MM-DD-YYYY
+  const us = t.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (us) return new Date(parseInt(us[3]), parseInt(us[1]) - 1, parseInt(us[2]));
+  // YYYY-MM-DD
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.floor((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+const NOW = () => new Date();
+
 const DISCARD_PROPERTY_TYPES = ["condo", "apartment", "townhouse", "mobile", "manufactured"];
 
 function emptyBreakdown(): ScoreBreakdown {
@@ -53,18 +73,63 @@ function bucketFor(total: number): Bucket {
   return "LOW";
 }
 
+function scoreFinancial(lead: Lead): ScoreBreakdown["financial"] {
+  // Recent-mover relief: sale within 2 years
+  const saleDate = parseDate(lead.lastSaleDate);
+  const recentMover = saleDate !== null && daysBetween(NOW(), saleDate) <= 730;
+
+  let ltv = 0;
+  let equityAbs = 0;
+  let homeValue = 0;
+
+  // Home value tier (always applied)
+  const v = lead.estimatedValue ?? 0;
+  if (v >= 800000) homeValue = 5;
+  else if (v >= 400000) homeValue = 3;
+  else homeValue = 1;
+
+  if (recentMover) {
+    return {
+      score: 20 + homeValue,
+      max: 30,
+      details: { ltv: 0, equityAbs: 0, homeValue, recentMoverRelief: true },
+    };
+  }
+
+  // LTV bracket
+  const l = lead.ltvPercent;
+  if (l !== null) {
+    if (l < 30) ltv = 18;
+    else if (l < 50) ltv = 14;
+    else if (l < 70) ltv = 9;
+    else if (l < 85) ltv = 4;
+    else ltv = 0;
+  }
+
+  // Absolute equity
+  const e = lead.equityDollar ?? 0;
+  if (e >= 150000) equityAbs = 7;
+  else if (e >= 75000) equityAbs = 4;
+  else if (e >= 30000) equityAbs = 1;
+  else equityAbs = 0;
+
+  return {
+    score: ltv + equityAbs + homeValue,
+    max: 30,
+    details: { ltv, equityAbs, homeValue, recentMoverRelief: false },
+  };
+}
+
 export function scoreLead(lead: Lead): LeadScore {
   const dq = checkDiscard(lead);
   if (dq) return discard(dq.reason, dq.cleaned);
 
-  // Scoring not yet implemented — placeholder, will be filled in next tasks.
   const cleanedPhones = lead.phones.filter((p) => !p.dnc);
-  return {
-    total: 0,
-    bucket: bucketFor(0),
-    breakdown: emptyBreakdown(),
-    cleanedPhones,
-  };
+  const breakdown = emptyBreakdown();
+  breakdown.financial = scoreFinancial(lead);
+
+  const total = breakdown.financial.score; // other categories added in later tasks
+  return { total, bucket: bucketFor(total), breakdown, cleanedPhones };
 }
 
 export function scoreLeads(leads: Lead[]): LeadScore[] {
