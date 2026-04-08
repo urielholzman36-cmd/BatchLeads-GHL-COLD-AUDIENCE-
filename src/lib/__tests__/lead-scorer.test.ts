@@ -342,3 +342,69 @@ describe("scoreLead — Contactability (10 pts)", () => {
     expect(r.breakdown.contact.details.listCountAdj).toBe(pts);
   });
 });
+
+describe("scoreLead — sanity check from spec", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-08"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("grand-slam long-tenure owner hits HIGH (≥55)", () => {
+    const r = scoreLead(makeLead({
+      lastSaleDate: "01-01-2010",
+      loanRecordingDate: "01-01-2025",
+      yearBuilt: 1965,
+      sqft: 1800,
+      assessedValue: 400000,
+      estimatedValue: 800000,
+      ltvPercent: 30,
+      equityDollar: 560000,
+      ownerOccupied: true,
+      coOwnerFirstName: "Spouse",
+      phones: [
+        { number: "1", type: "Mobile", dnc: false },
+        { number: "2", type: "Mobile", dnc: false },
+      ],
+      createdDate: "03-20-2026",
+      listCount: 1,
+    }));
+    expect(r.bucket).toBe("HIGH");
+    expect(r.total).toBeGreaterThanOrEqual(70);
+  });
+
+  it("grand-slam recent mover hits HIGH (≥55) via relief branch", () => {
+    const r = scoreLead(makeLead({
+      lastSaleDate: "03-15-2026",
+      loanRecordingDate: "03-20-2026",
+      yearBuilt: 1965,
+      sqft: 1800,
+      assessedValue: 400000,
+      estimatedValue: 800000,
+      ltvPercent: 85, // would be 0 pts without relief
+      equityDollar: 60000,
+      ownerOccupied: true,
+      coOwnerFirstName: "Spouse",
+      phones: [
+        { number: "1", type: "Mobile", dnc: false },
+        { number: "2", type: "Mobile", dnc: false },
+      ],
+      createdDate: "03-20-2026",
+      listCount: 1,
+    }));
+    expect(r.bucket).toBe("HIGH");
+    expect(r.breakdown.financial.details.recentMoverRelief).toBe(true);
+    expect(r.total).toBeGreaterThanOrEqual(70);
+  });
+
+  it("Jesus Rolon sample row from spec is auto-discarded", () => {
+    const r = scoreLead(makeLead({
+      ltvPercent: 98.8,
+      phones: [
+        { number: "6192611192", type: "Mobile", dnc: true },
+        { number: "6194232578", type: "Landline", dnc: true },
+      ],
+    }));
+    expect(r.bucket).toBe("DISCARD");
+  });
+});
