@@ -1,5 +1,4 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Lead } from "./types";
 
 const MODEL = "claude-sonnet-4-6";
 const BATCH_SIZE = 15;
@@ -10,88 +9,9 @@ function getClient(): Anthropic {
   });
 }
 
-export interface ScoreResult {
-  phone: string;
-  score: number;
-  reason: string;
-}
-
 export interface MessageResult {
   phone: string;
   message: string;
-}
-
-async function scoreBatch(
-  client: Anthropic,
-  leads: Lead[]
-): Promise<ScoreResult[]> {
-  const leadsJson = leads.map((l) => ({
-    phone: l.phone,
-    firstName: l.firstName,
-    lastName: l.lastName,
-    propertyType: l.propertyType,
-    yearBuilt: l.yearBuilt,
-    estimatedValue: l.estimatedValue,
-    equityPercent: l.equityPercent,
-    ownerOccupied: l.ownerOccupied,
-    lastSaleDate: l.lastSaleDate,
-    absenteeOwner: l.absenteeOwner,
-    freeAndClear: l.freeAndClear,
-    sqft: l.sqft,
-    bedrooms: l.bedrooms,
-    bathrooms: l.bathrooms,
-  }));
-
-  const prompt = `You are a lead scoring expert for a home remodeling company. Score each lead 1–10 based on their remodeling potential.
-
-Scoring criteria:
-- HIGH (7–10): Older home (15+ years), high equity (30%+), owner-occupied, long ownership (sold 5+ years ago), free and clear is a bonus.
-- MEDIUM (4–6): Home 5–15 years old, moderate equity (10–30%), may or may not be owner-occupied.
-- LOW (1–3): Recently sold (within 2 years), corporate/absentee owner, low equity (<10%), vacant or new construction.
-
-Leads to score:
-${JSON.stringify(leadsJson, null, 2)}
-
-Return ONLY a JSON array with this exact shape (no markdown, no explanation, no code fences):
-[
-  { "phone": "...", "score": 7, "reason": "Brief 1-sentence reason" }
-]`;
-
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "";
-
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) {
-    throw new Error(
-      "Claude scoreLeads: could not parse JSON array from response"
-    );
-  }
-
-  return JSON.parse(match[0]) as ScoreResult[];
-}
-
-/**
- * Score leads in parallel batches to avoid response truncation.
- */
-export async function scoreLeads(leads: Lead[]): Promise<ScoreResult[]> {
-  const client = getClient();
-  const batches: Lead[][] = [];
-
-  for (let i = 0; i < leads.length; i += BATCH_SIZE) {
-    batches.push(leads.slice(i, i + BATCH_SIZE));
-  }
-
-  const batchResults = await Promise.all(
-    batches.map((batch) => scoreBatch(client, batch))
-  );
-
-  return batchResults.flat();
 }
 
 async function generateMessageBatch(
@@ -108,32 +28,56 @@ async function generateMessageBatch(
   link1: string,
   link2: string
 ): Promise<MessageResult[]> {
-  let guidelinesSection = "";
-  if (guidelines && guidelines.trim()) {
-    guidelinesSection = `\nAdditional guidelines from the client:\n${guidelines.trim()}\n`;
-  }
+  const mainOffer =
+    guidelines && guidelines.trim()
+      ? guidelines.trim()
+      : "a free in-home design consultation";
+  const brandName = "VO360";
+  const bonusOffer =
+    "$1,500 in free showroom credits (1 credit = $1) toward their first project";
+  const mainLink = link1.trim();
+  const secondaryLink = link2.trim();
 
-  let linkSection = "";
-  if (link1.trim() && link2.trim()) {
-    linkSection = `\nIncorporate BOTH of these links naturally in each message:\n- Link 1: ${link1.trim()}\n- Link 2: ${link2.trim()}\n`;
-  } else if (link1.trim()) {
-    linkSection = `\nIncorporate this link naturally in the message: ${link1.trim()}\n`;
-  } else if (link2.trim()) {
-    linkSection = `\nIncorporate this link naturally in the message: ${link2.trim()}\n`;
-  }
+  const prompt = `You are an expert direct-response copywriter for cold outreach in the home services industry.
 
-  const prompt = `You are a copywriter for a home remodeling company called VO360. Write personalized SMS messages for each lead.
+Your job is to write a short, highly personalized outreach message to a homeowner or new mover that feels human, warm, relevant, and curiosity-driven. The goal is not to hard-sell — the goal is to get the lead to reply.
 
-Rules:
-- Under 160 characters total (unless links make it longer, that's OK)
-- If the lead has a first name, use it. If not, use a friendly generic greeting like "Hi there" or "Hey neighbor"
-- Mention their street address or neighborhood to feel personal
-- Keep a casual, friendly tone
-- Soft call-to-action (never pushy or salesy)
-- NEVER mention equity, property value, ownership status, or financial details
-- Sound like a neighbor, not a corporation
-- Each message must be unique
-${guidelinesSection}${linkSection}
+Write in natural American English.
+
+Inputs (constant for every lead in this batch):
+- Brand name: ${brandName}
+- Main offer: ${mainOffer}
+- Main link: ${mainLink || "(none)"}
+- Secondary link: ${secondaryLink || "(none)"}
+- Bonus offer (MANDATORY in every message): ${bonusOffer}
+- Tone: warm, personal, local, helpful
+
+Requirements:
+1. Start with a personalized congratulations on their new home or property.
+2. Make the message feel like a thoughtful gift, not an advertisement.
+3. Mention the main offer in one simple sentence.
+4. LINKS — this rule is MANDATORY:
+   - If BOTH "Main link" and "Secondary link" are provided (not "(none)"), you MUST include BOTH links in every message, naturally woven in. Do not pick one — include both.
+   - If only ONE link is provided, include that one.
+   - If neither is provided, skip links entirely.
+   - When using both, give each link a clear, distinct purpose (e.g., one for browsing/info, one for booking/action) so they don't feel redundant.
+6. Keep the message between 60 and 110 words.
+7. Do not sound pushy, spammy, or corporate.
+8. You MUST explicitly mention that the homeowner is receiving $1,500 in free showroom credits, and make clear that 1 credit = $1.
+9. Do NOT use hype phrases like "limited time", "act now", or "exclusive deal".
+10. End with one simple question that creates curiosity and makes it easy to reply.
+11. If the lead has a first name, use it. If not, open with a warm generic greeting like "Hi there" or "Hey neighbor".
+12. Mention their street/address or neighborhood to feel personal.
+13. NEVER mention equity, property value, ownership status, or financial details.
+14. One core idea, one CTA, focused on the homeowner — not the company.
+
+For each lead, write the message in ONE of these three styles. Mix the styles across the batch so roughly a third use each (don't pick the same style for every lead):
+- Version A: very natural and personal (60–110 words)
+- Version B: slightly more promotional but still warm (60–110 words)
+- Version C: ultra-short, reply-focused (rule 6 word count does NOT apply — keep it under 40 words)
+
+Pick whichever style fits each lead best, but vary across the batch.
+
 Leads:
 ${JSON.stringify(leads, null, 2)}
 
